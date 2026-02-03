@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+ml_pipeline/.venv/
+ml_pipeline/venv/
+ENV/
+env/
+venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# ML/Data Science
+ml_pipeline/data/raw/*
+ml_pipeline/data/processed/*
+ml_pipeline/data/personal/*
+!ml_pipeline/data/raw/.gitkeep
+!ml_pipeline/data/processed/.gitkeep
+!ml_pipeline/data/personal/.gitkeep
+ml_pipeline/models/trained/*
+!ml_pipeline/models/trained/.gitkeep
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.ckpt
+*.pth
+*.pt
+
+# Keep converted models for ESP32
+!ml_pipeline/models/converted/
+
+# PlatformIO
+arrhythmia_system_controller/.pio/
+arrhythmia_system_controller/.vscode/
+arrhythmia_system_controller/lib/
+arrhythmia_system_controller/libdeps/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak

@@ -1,0 +1,29 @@
+# Core ML Libraries
+tensorflow==2.15.0           # Main ML framework
+numpy==1.24.3                # Numerical computing
+pandas==2.0.3                # Data manipulation
+scikit-learn==1.3.0          # ML utilities and preprocessing
+
+# Signal Processing
+scipy==1.11.1                # Scientific computing, signal filtering
+wfdb==4.1.2                  # For reading PhysioNet/MIT-BIH datasets
+
+# Visualization
+matplotlib==3.7.2            # Plotting
+seaborn==0.12.2              # Statistical visualization
+
+# Jupyter
+jupyter==1.0.0               # Jupyter notebook
+ipykernel==6.25.0            # Jupyter kernel
+ipywidgets==8.1.0            # Interactive widgets
+
+# Model Interpretation (XAI)
+shap==0.42.1                 # SHAP values for model explanation
+
+# Utilities
+tqdm==4.66.1                 # Progress bars
+h5py==3.9.0                  # HDF5 file handling (for saving models)
+pillow==10.0.0               # Image processing
+
+# Training Visualization
+tensorboard==2.15.1          # TensorFlow training visualization
