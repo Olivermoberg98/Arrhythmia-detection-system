@@ -33,6 +33,7 @@ venv/
 *.ipynb_checkpoints/
 
 # ML/Data Science
+ml_pipeline/data/logs/*
 ml_pipeline/data/raw/*
 ml_pipeline/data/processed/*
 ml_pipeline/data/personal/*
