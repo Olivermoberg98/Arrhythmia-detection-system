@@ -1,7 +1,6 @@
 package com.ecgmonitor.app.ui.screens
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -38,7 +37,6 @@ fun LiveMonitorScreen(
     val heartRate by viewModel.heartRate.collectAsStateWithLifecycle()
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
 
-    // Handle recording saved
     LaunchedEffect(uiState) {
         if (uiState is LiveMonitorUiState.RecordingSaved) {
             val sessionId = (uiState as LiveMonitorUiState.RecordingSaved).sessionId
@@ -53,18 +51,18 @@ fun LiveMonitorScreen(
                     Text(
                         "Live Monitor",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        fontSize = 18.sp // Slightly smaller for compact look
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MedicalDarkBlue
                 ),
                 actions = {
-                    // Recording indicator
                     if (isRecording) {
                         RecordingIndicator()
                     }
-                }
+                },
             )
         },
         containerColor = MedicalDarkBackground
@@ -237,7 +235,7 @@ private fun ConnectionStatusBanner(connectionState: ConnectionState) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = color.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp)
+        shape = MaterialTheme.shapes.small
     ) {
         Row(
             modifier = Modifier
@@ -403,7 +401,7 @@ private fun RecordingControls(
 private fun RecordingIndicator() {
     Surface(
         color = MedicalRed.copy(alpha = 0.2f),
-        shape = RoundedCornerShape(12.dp)
+        shape = MaterialTheme.shapes.small
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -436,7 +434,7 @@ private fun StatusMessage(message: String, isError: Boolean) {
             else
                 MedicalGreen.copy(alpha = 0.1f)
         ),
-        shape = RoundedCornerShape(8.dp)
+        shape = MaterialTheme.shapes.small
     ) {
         Row(
             modifier = Modifier

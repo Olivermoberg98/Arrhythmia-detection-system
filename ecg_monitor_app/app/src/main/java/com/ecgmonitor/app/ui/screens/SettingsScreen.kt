@@ -35,12 +35,13 @@ fun SettingsScreen(
                     Text(
                         "Settings",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        fontSize = 18.sp // Compact
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MedicalDarkBlue
-                )
+                ),
             )
         },
         containerColor = MedicalDarkBackground

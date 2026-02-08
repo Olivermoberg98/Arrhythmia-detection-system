@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -33,6 +34,14 @@ fun HistoryScreen(
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
 
     var showSortMenu by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()  // Remember scroll state
+
+    // Auto-scroll to top when sort order changes
+    LaunchedEffect(sortOrder) {
+        if (sessions.isNotEmpty()) {
+            listState.animateScrollToItem(0)  // Scroll to first item
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -48,12 +57,70 @@ fun HistoryScreen(
                     containerColor = MedicalDarkBlue
                 ),
                 actions = {
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(
-                            Icons.Default.Sort,
-                            contentDescription = "Sort",
-                            tint = Color.White
-                        )
+                    // Sort button with menu
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(
+                                Icons.Default.Sort,
+                                contentDescription = "Sort",
+                                tint = Color.White
+                            )
+                        }
+
+                        // Menu aligned to button
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Most Recent") },
+                                onClick = {
+                                    viewModel.setSortOrder(SortOrder.MOST_RECENT)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortOrder == SortOrder.MOST_RECENT) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Oldest First") },
+                                onClick = {
+                                    viewModel.setSortOrder(SortOrder.OLDEST)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortOrder == SortOrder.OLDEST) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Most Arrhythmias") },
+                                onClick = {
+                                    viewModel.setSortOrder(SortOrder.MOST_ARRHYTHMIAS)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortOrder == SortOrder.MOST_ARRHYTHMIAS) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Longest Duration") },
+                                onClick = {
+                                    viewModel.setSortOrder(SortOrder.LONGEST)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = {
+                                    if (sortOrder == SortOrder.LONGEST) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -69,6 +136,7 @@ fun HistoryScreen(
                 EmptyHistoryState(modifier = Modifier.align(Alignment.Center))
             } else {
                 LazyColumn(
+                    state = listState,  // Use the LazyListState
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -80,61 +148,6 @@ fun HistoryScreen(
                         )
                     }
                 }
-            }
-
-            // Sort menu
-            DropdownMenu(
-                expanded = showSortMenu,
-                onDismissRequest = { showSortMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Most Recent") },
-                    onClick = {
-                        viewModel.setSortOrder(SortOrder.MOST_RECENT)
-                        showSortMenu = false
-                    },
-                    leadingIcon = {
-                        if (sortOrder == SortOrder.MOST_RECENT) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                        }
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Oldest First") },
-                    onClick = {
-                        viewModel.setSortOrder(SortOrder.OLDEST)
-                        showSortMenu = false
-                    },
-                    leadingIcon = {
-                        if (sortOrder == SortOrder.OLDEST) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                        }
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Most Arrhythmias") },
-                    onClick = {
-                        viewModel.setSortOrder(SortOrder.MOST_ARRHYTHMIAS)
-                        showSortMenu = false
-                    },
-                    leadingIcon = {
-                        if (sortOrder == SortOrder.MOST_ARRHYTHMIAS) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                        }
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Longest Duration") },
-                    onClick = {
-                        viewModel.setSortOrder(SortOrder.LONGEST)
-                        showSortMenu = false
-                    },
-                    leadingIcon = {
-                        if (sortOrder == SortOrder.LONGEST) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                        }
-                    }
-                )
             }
         }
     }
