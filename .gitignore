@@ -82,3 +82,6 @@ htmlcov/
 # Temporary files
 *.tmp
 *.bak
+
+# App
+ecg_monitor_app/.gradle/*
