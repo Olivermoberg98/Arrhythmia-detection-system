@@ -46,4 +46,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun hasRequiredPermissions(): Boolean {
         return bleManager.hasRequiredPermissions()
     }
+
+    fun setError(message: String) {
+        bleManager.setError(message)
+    }
 }

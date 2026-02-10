@@ -84,4 +84,4 @@ htmlcov/
 *.bak
 
 # App
-ecg_monitor_app/.gradle/*
+ecg_monitor_app/.gradle/8.13/

@@ -59,46 +59,29 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-
-    // Jetpack Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-
-    // Compose - ViewModel integration
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-
-    // Navigation
     implementation(libs.androidx.navigation.compose)
-
-    // MPAndroidChart for ECG waveform
     implementation(libs.mpandroidchart)
-
-    // BLE Library
     implementation(libs.rxandroidble)
     implementation(libs.rxjava)
     implementation(libs.rxandroid)
-
-    // Room Database
+    implementation(libs.kable.core)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-
-    // Coroutines
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-
-    // Utilities
     implementation(libs.gson)
     implementation(libs.accompanist.permissions)
     implementation(libs.timber)
-
-    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

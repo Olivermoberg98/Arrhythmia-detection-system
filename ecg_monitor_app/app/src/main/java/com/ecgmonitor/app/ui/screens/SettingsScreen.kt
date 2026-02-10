@@ -1,9 +1,17 @@
 package com.ecgmonitor.app.ui.screens
 
+import android.bluetooth.BluetoothManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,37 +19,65 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.ble.BleDevice
+import com.ecgmonitor.app.data.ble.BlePermissions
 import com.ecgmonitor.app.data.ble.ConnectionState
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    viewModel: SettingsViewModel
-) {
+fun SettingsScreen(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val discoveredDevices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
+
+    var permissionsGranted by remember { mutableStateOf(BlePermissions.allGranted(context)) }
+    // True once user has tapped deny and "Don't ask again" — we must send them to system Settings
+    var permanentlyDenied by remember { mutableStateOf(false) }
+
+    // Re-check permissions every time the screen resumes (e.g. returning from system Settings)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permissionsGranted = BlePermissions.allGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        permissionsGranted = results.values.all { it }
+        if (!permissionsGranted) {
+            // Permanently denied = still denied AND rationale should NOT be shown
+            permanentlyDenied = BlePermissions.required.any { permission ->
+                !results[permission]!! &&
+                        (context as? ComponentActivity)?.shouldShowRequestPermissionRationale(permission) == false
+            }
+        } else {
+            permanentlyDenied = false
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "Settings",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 18.sp // Compact
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MedicalDarkBlue
-                ),
+                title = { Text("Settings", fontWeight = FontWeight.Bold, color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MedicalDarkBlue)
             )
         },
         containerColor = MedicalDarkBackground
@@ -53,7 +89,24 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Connection status card
+
+            // Permission banner — always shown until granted
+            if (!permissionsGranted) {
+                item {
+                    PermissionCard(
+                        permanentlyDenied = permanentlyDenied,
+                        onRequest = { permissionLauncher.launch(BlePermissions.required) },
+                        onOpenSettings = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+
             item {
                 ConnectionStatusCard(
                     connectionState = connectionState,
@@ -61,95 +114,97 @@ fun SettingsScreen(
                 )
             }
 
-            // BLE device scanning section
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MedicalCardBackground
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
+                    elevation = CardDefaults.cardElevation(4.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "ECG Devices",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            Text("ECG Devices", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
                             Button(
                                 onClick = {
-                                    if (connectionState is ConnectionState.Scanning) {
-                                        viewModel.stopScanning()
-                                    } else {
-                                        viewModel.startScanning()
+                                    when {
+                                        !permissionsGranted ->
+                                            permissionLauncher.launch(BlePermissions.required)
+                                        !isBluetoothEnabled(context) ->
+                                            viewModel.setError("Bluetooth is disabled. Enable it in device settings.")
+                                        connectionState is ConnectionState.Scanning ->
+                                            viewModel.stopScanning()
+                                        else ->
+                                            viewModel.startScanning()
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (connectionState is ConnectionState.Scanning)
-                                        MedicalRed else MedicalGreen
+                                    containerColor = when {
+                                        !permissionsGranted -> MedicalOrange
+                                        connectionState is ConnectionState.Scanning -> MedicalRed
+                                        else -> MedicalGreen
+                                    }
                                 )
                             ) {
                                 Icon(
-                                    if (connectionState is ConnectionState.Scanning)
-                                        Icons.Default.Stop else Icons.Default.Bluetooth,
+                                    imageVector = when {
+                                        !permissionsGranted -> Icons.Default.Lock
+                                        connectionState is ConnectionState.Scanning -> Icons.Default.Stop
+                                        else -> Icons.Default.Bluetooth
+                                    },
                                     contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    if (connectionState is ConnectionState.Scanning)
-                                        "Stop" else "Scan"
-                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(when {
+                                    !permissionsGranted -> "Allow"
+                                    connectionState is ConnectionState.Scanning -> "Stop"
+                                    else -> "Scan"
+                                })
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Device list
-                        if (connectionState is ConnectionState.Scanning) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    color = MedicalGreen,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                        when {
+                            connectionState is ConnectionState.Scanning -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MedicalGreen,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Scanning for devices...", fontSize = 14.sp, color = MedicalTextSecondary)
+                                }
+                            }
+                            connectionState is ConnectionState.Error -> {
                                 Text(
-                                    "Scanning for devices...",
-                                    color = MedicalTextSecondary,
-                                    fontSize = 14.sp
+                                    (connectionState as ConnectionState.Error).message,
+                                    fontSize = 13.sp,
+                                    color = MedicalRed
                                 )
                             }
-                        }
-
-                        if (discoveredDevices.isEmpty() && connectionState !is ConnectionState.Scanning) {
-                            Text(
-                                "No devices found. Tap Scan to search for ECG devices.",
-                                color = MedicalTextSecondary,
-                                fontSize = 14.sp
-                            )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                discoveredDevices.forEach { device ->
-                                    DeviceItem(
-                                        device = device,
-                                        isConnected = (connectionState as? ConnectionState.Connected)?.device == device,
-                                        isConnecting = connectionState is ConnectionState.Connecting,
-                                        onClick = { viewModel.connectToDevice(device) }
-                                    )
+                            discoveredDevices.isEmpty() -> {
+                                Text("No devices found. Tap Scan to search.", fontSize = 14.sp, color = MedicalTextSecondary)
+                            }
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    discoveredDevices.forEach { device ->
+                                        DeviceItem(
+                                            device = device,
+                                            isConnected = (connectionState as? ConnectionState.Connected)?.device == device,
+                                            isConnecting = connectionState is ConnectionState.Connecting,
+                                            onClick = { viewModel.connectToDevice(device) }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -157,64 +212,18 @@ fun SettingsScreen(
                 }
             }
 
-            // App information
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MedicalCardBackground
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
+                    elevation = CardDefaults.cardElevation(4.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            "About",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text("About", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(modifier = Modifier.height(12.dp))
-
                         SettingRow("Version", "1.0.0")
                         SettingRow("Sampling Rate", "360 Hz")
-                        SettingRow("Data Source", "ESP32 via BLE")
-                    }
-                }
-            }
-
-            // Placeholder for future settings
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MedicalCardBackground
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            "Preferences",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            "Additional settings will be added here",
-                            color = MedicalTextSecondary,
-                            fontSize = 14.sp
-                        )
+                        SettingRow("Connection", "Bluetooth LE")
                     }
                 }
             }
@@ -223,87 +232,87 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun ConnectionStatusCard(
-    connectionState: ConnectionState,
-    onDisconnect: () -> Unit
+private fun PermissionCard(
+    permanentlyDenied: Boolean,
+    onRequest: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    val (statusText, statusColor, icon) = when (connectionState) {
-        is ConnectionState.Disconnected -> Triple(
-            "Not Connected",
-            MedicalTextSecondary,
-            Icons.Default.BluetoothDisabled
-        )
-        is ConnectionState.Scanning -> Triple(
-            "Scanning...",
-            MedicalCyan,
-            Icons.Default.BluetoothSearching
-        )
-        is ConnectionState.Connecting -> Triple(
-            "Connecting...",
-            MedicalOrange,
-            Icons.Default.Bluetooth
-        )
-        is ConnectionState.Connected -> Triple(
-            "Connected to ${connectionState.device.name}",
-            MedicalGreen,
-            Icons.Default.BluetoothConnected
-        )
-        is ConnectionState.Error -> Triple(
-            connectionState.message,
-            MedicalRed,
-            Icons.Default.Error
-        )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MedicalOrange.copy(alpha = 0.12f)),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                Icons.Default.BluetoothDisabled,
+                contentDescription = null,
+                tint = MedicalOrange,
+                modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                "Bluetooth Permission Required",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = MedicalOrange
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                if (permanentlyDenied)
+                    "Permission was permanently denied. Open app settings to grant Bluetooth access manually."
+                else
+                    "Bluetooth access is required to scan and connect to your ECG device.",
+                fontSize = 13.sp,
+                color = MedicalTextSecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Button(
+                onClick = if (permanentlyDenied) onOpenSettings else onRequest,
+                colors = ButtonDefaults.buttonColors(containerColor = MedicalOrange)
+            ) {
+                Text(if (permanentlyDenied) "Open App Settings" else "Grant Permission")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionStatusCard(connectionState: ConnectionState, onDisconnect: () -> Unit) {
+    val (text, color, icon) = when (connectionState) {
+        is ConnectionState.Disconnected  -> Triple("Not Connected", MedicalTextSecondary, Icons.Default.BluetoothDisabled)
+        is ConnectionState.Scanning      -> Triple("Scanning...", MedicalCyan, Icons.Default.BluetoothSearching)
+        is ConnectionState.Connecting    -> Triple("Connecting...", MedicalOrange, Icons.Default.Bluetooth)
+        is ConnectionState.Connected     -> Triple("Connected to ${connectionState.device.name}", MedicalGreen, Icons.Default.BluetoothConnected)
+        is ConnectionState.Error         -> Triple(connectionState.message, MedicalRed, Icons.Default.Error)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = statusColor.copy(alpha = 0.1f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = statusColor,
-                    modifier = Modifier.size(32.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(30.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text(
-                        "Device Status",
-                        fontSize = 12.sp,
-                        color = MedicalTextSecondary
-                    )
-                    Text(
-                        statusText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = statusColor
-                    )
+                    Text("Device Status", fontSize = 12.sp, color = MedicalTextSecondary)
+                    Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = color)
                 }
             }
-
             if (connectionState is ConnectionState.Connected) {
                 OutlinedButton(
                     onClick = onDisconnect,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MedicalRed
-                    )
-                ) {
-                    Text("Disconnect")
-                }
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MedicalRed)
+                ) { Text("Disconnect") }
             }
         }
     }
@@ -317,49 +326,24 @@ private fun DeviceItem(
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick, enabled = !isConnecting),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !isConnecting, onClick = onClick),
         color = if (isConnected) MedicalGreen.copy(alpha = 0.1f) else Color.Transparent,
         shape = MaterialTheme.shapes.medium
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text(
-                    device.name ?: "Unknown Device",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
-                )
-                Text(
-                    device.address,
-                    fontSize = 12.sp,
-                    color = MedicalTextSecondary
-                )
+                Text(device.name ?: "Unknown Device", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                Text(device.address, fontSize = 12.sp, color = MedicalTextSecondary)
+                Text("${device.rssi} dBm", fontSize = 11.sp, color = MedicalTextSecondary)
             }
-
             when {
-                isConnected -> Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = "Connected",
-                    tint = MedicalGreen
-                )
-                isConnecting -> CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MedicalOrange,
-                    strokeWidth = 2.dp
-                )
-                else -> Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = "Connect",
-                    tint = MedicalTextSecondary
-                )
+                isConnected  -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MedicalGreen)
+                isConnecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MedicalOrange, strokeWidth = 2.dp)
+                else         -> Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MedicalTextSecondary)
             }
         }
     }
@@ -368,21 +352,15 @@ private fun DeviceItem(
 @Composable
 private fun SettingRow(label: String, value: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            label,
-            fontSize = 14.sp,
-            color = MedicalTextSecondary
-        )
-        Text(
-            value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color.White
-        )
+        Text(label, fontSize = 14.sp, color = MedicalTextSecondary)
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
     }
+}
+
+private fun isBluetoothEnabled(context: Context): Boolean {
+    val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    return manager?.adapter?.isEnabled == true
 }

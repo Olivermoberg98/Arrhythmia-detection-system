@@ -114,25 +114,20 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
             val samplingRate = _sessionData.value?.session?.samplingRate ?: 360
             val delayMs = (1000L / (samplingRate * _playbackSpeed.value)).toLong()
             val batchSize = 10
+            val windowSize = 3000
 
             while (isPlaying && currentPlaybackIndex < allReadings.size) {
                 val endIndex = minOf(currentPlaybackIndex + batchSize, allReadings.size)
-                val batch = allReadings.subList(currentPlaybackIndex, endIndex)
-
-                // Update visible window
-                val currentWindow = _currentReadings.value.toMutableList()
-                currentWindow.addAll(batch)
-
-                // Keep window size limited
-                if (currentWindow.size > 3000) {
-                    val toRemove = currentWindow.size - 3000
-                    repeat(toRemove) { currentWindow.removeAt(0) }
-                }
-
-                _currentReadings.value = currentWindow
-                updateVisibleEvents(currentWindow)
-
                 currentPlaybackIndex = endIndex
+
+                // Show sliding window centered on current position
+                val windowStart = maxOf(0, currentPlaybackIndex - windowSize / 2)
+                val windowEnd = minOf(allReadings.size, windowStart + windowSize)
+                val visibleWindow = allReadings.subList(windowStart, windowEnd)
+
+                _currentReadings.value = visibleWindow
+                updateVisibleEvents(visibleWindow)
+
                 _playbackProgress.value = currentPlaybackIndex.toFloat() / allReadings.size
 
                 delay(delayMs * batchSize)

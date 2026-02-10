@@ -1,6 +1,8 @@
 package com.ecgmonitor.app.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,12 +22,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.database.entities.HealthStatus
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
+import com.ecgmonitor.app.data.models.ArrhythmiaType
 import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.*
+import com.ecgmonitor.app.utils.ExportManager
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -61,8 +67,7 @@ fun SessionDetailScreen(
                     Text(
                         sessionData?.session?.name ?: "Session Details",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 18.sp // Compact
+                        color = Color.White
                     )
                 },
                 navigationIcon = {
@@ -78,67 +83,42 @@ fun SessionDetailScreen(
                     containerColor = MedicalDarkBlue
                 ),
                 actions = {
-                    // Export button with menu
-                    Box {
-                        IconButton(onClick = { showExportMenu = true }) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = "Export",
-                                tint = Color.White
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showExportMenu,
-                            onDismissRequest = { showExportMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Export as PDF") },
-                                onClick = {
-                                    sessionData?.let { exportAsPdf(context, it, viewModel) }
-                                    showExportMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Export as CSV") },
-                                onClick = {
-                                    sessionData?.let { exportAsCsv(context, it, viewModel) }
-                                    showExportMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.TableChart, contentDescription = null)
-                                }
-                            )
-                        }
+                    IconButton(onClick = { showExportMenu = true }) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "Export",
+                            tint = Color.White
+                        )
                     }
-                },
+                }
             )
         },
         containerColor = MedicalDarkBackground
     ) { paddingValues ->
 
         sessionData?.let { data ->
-            // Scrollable column for all content
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp)
             ) {
+                Spacer(modifier = Modifier.height(16.dp))
+
                 // Top Section: Statistics
-                StatisticsSection(session = data.session)
+                StatisticsSection(
+                    session = data.session,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Middle Section: ECG Chart (fixed height)
+                // Middle Section: ECG Chart
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(400.dp), // Fixed height for chart
+                        .height(400.dp), // Fixed height
                     colors = CardDefaults.cardColors(
                         containerColor = MedicalCardBackground
                     ),
@@ -162,8 +142,8 @@ fun SessionDetailScreen(
                                 fontWeight = FontWeight.Medium
                             )
 
-                            // Speed control
-                            Box {
+                            Row {
+                                // Speed control
                                 TextButton(onClick = { showSpeedMenu = true }) {
                                     Text(
                                         "${playbackSpeed}x",
@@ -225,39 +205,51 @@ fun SessionDetailScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Bottom Section: Event Timeline (fixed height)
+                // Bottom Section: Event Timeline
                 EventTimelineSection(
                     events = viewModel.getFilteredEvents(),
                     currentFilter = eventFilter,
                     onFilterClick = { showFilterMenu = true },
-                    onEventClick = { viewModel.jumpToEvent(it) }
+                    onEventClick = { viewModel.jumpToEvent(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    showFilterMenu = showFilterMenu,
+                    onFilterMenuDismiss = { showFilterMenu = false },
+                    onFilterSelect = { filter ->
+                        viewModel.setEventFilter(filter)
+                        showFilterMenu = false
+                    }
                 )
 
-                // Add bottom padding for scroll
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Filter menu (outside scrollable content)
-            Box {
-                DropdownMenu(
-                    expanded = showFilterMenu,
-                    onDismissRequest = { showFilterMenu = false }
-                ) {
-                    EventFilter.values().forEach { filter ->
-                        DropdownMenuItem(
-                            text = { Text(getFilterName(filter)) },
-                            onClick = {
-                                viewModel.setEventFilter(filter)
-                                showFilterMenu = false
-                            },
-                            leadingIcon = {
-                                if (eventFilter == filter) {
-                                    Icon(Icons.Default.Check, contentDescription = null)
-                                }
-                            }
-                        )
+            // Export menu
+            DropdownMenu(
+                expanded = showExportMenu,
+                onDismissRequest = { showExportMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Export as PDF") },
+                    onClick = {
+                        exportAsPdf(context, data, viewModel)
+                        showExportMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null)
                     }
-                }
+                )
+                DropdownMenuItem(
+                    text = { Text("Export as CSV") },
+                    onClick = {
+                        exportAsCsv(context, data, viewModel)
+                        showExportMenu = false
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.TableChart, contentDescription = null)
+                    }
+                )
             }
         } ?: run {
             // Loading state
@@ -273,10 +265,11 @@ fun SessionDetailScreen(
 
 @Composable
 private fun StatisticsSection(
-    session: com.ecgmonitor.app.data.database.entities.EcgSessionEntity
+    session: com.ecgmonitor.app.data.database.entities.EcgSessionEntity,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.padding(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MedicalCardBackground
         ),
@@ -332,71 +325,6 @@ private fun StatisticsSection(
             if (session.healthStatus != HealthStatus.NORMAL) {
                 Spacer(modifier = Modifier.height(12.dp))
                 HealthAssessment(session)
-            }
-        }
-    }
-}
-
-@Composable
-private fun EventTimelineSection(
-    events: List<ArrhythmiaEvent>,
-    currentFilter: EventFilter,
-    onFilterClick: () -> Unit,
-    onEventClick: (ArrhythmiaEvent) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(300.dp), // Fixed height for timeline
-        colors = CardDefaults.cardColors(
-            containerColor = MedicalCardBackground
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Event Timeline (${events.size})",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MedicalTextSecondary
-                )
-
-                TextButton(onClick = onFilterClick) {
-                    Text(
-                        getFilterName(currentFilter),
-                        fontSize = 12.sp,
-                        color = MedicalCyan
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.FilterList,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MedicalCyan
-                    )
-                }
-            }
-
-            // Event list
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(events) { event ->
-                    EventTimelineItem(
-                        event = event,
-                        onClick = { onEventClick(event) }
-                    )
-                }
             }
         }
     }
@@ -528,6 +456,91 @@ private fun PlaybackControls(
 }
 
 @Composable
+private fun EventTimelineSection(
+    events: List<ArrhythmiaEvent>,
+    currentFilter: EventFilter,
+    onFilterClick: () -> Unit,
+    onEventClick: (ArrhythmiaEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    showFilterMenu: Boolean,
+    onFilterMenuDismiss: () -> Unit,
+    onFilterSelect: (EventFilter) -> Unit
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MedicalCardBackground
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Event Timeline (${events.size})",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MedicalTextSecondary
+                )
+
+                Box {
+                    TextButton(onClick = onFilterClick) {
+                        Text(
+                            getFilterName(currentFilter),
+                            fontSize = 12.sp,
+                            color = MedicalCyan
+                        )
+                        Icon(
+                            Icons.Default.FilterList,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MedicalCyan
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showFilterMenu,
+                        onDismissRequest = onFilterMenuDismiss
+                    ) {
+                        EventFilter.values().forEach { filter ->
+                            DropdownMenuItem(
+                                text = { Text(getFilterName(filter)) },
+                                onClick = { onFilterSelect(filter) },
+                                leadingIcon = {
+                                    if (currentFilter == filter) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Event list
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(events) { event ->
+                    EventTimelineItem(
+                        event = event,
+                        onClick = { onEventClick(event) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun EventTimelineItem(
     event: ArrhythmiaEvent,
     onClick: () -> Unit
@@ -618,6 +631,8 @@ private fun exportAsPdf(
     data: com.ecgmonitor.app.data.database.entities.SessionWithData,
     viewModel: SessionDetailViewModel
 ) {
+    // PDF export will be implemented in ExportManager
+    // For now, show a toast
     android.widget.Toast.makeText(context, "PDF export coming soon", android.widget.Toast.LENGTH_SHORT).show()
 }
 
@@ -626,5 +641,6 @@ private fun exportAsCsv(
     data: com.ecgmonitor.app.data.database.entities.SessionWithData,
     viewModel: SessionDetailViewModel
 ) {
+    // CSV export will be implemented in ExportManager
     android.widget.Toast.makeText(context, "CSV export coming soon", android.widget.Toast.LENGTH_SHORT).show()
 }
