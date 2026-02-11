@@ -1,18 +1,191 @@
-#include <Arduino.h>
+#include "Arduino.h"
+#include "config.h"
+#include "sensors/ecg/ECGSensor.h"
+#include "sensors/ppg/PPGSensor.h"
+#include "signal_processing/SignalProcessor.h"
+#include "ml/Inference.h"
+#include "ble/BLEManager.h"
 
-// put function declarations here:
-int myFunction(int, int);
+// ============================================================
+// Module instances
+// ============================================================
+static ECGSensor      ecg;
+static PPGSensor      ppg;
+static SignalProcessor processor;
+static Inference      inference;
+static BLEManager     ble;
 
+// ============================================================
+// Shared state (inter-task, protected by a mutex)
+// ============================================================
+static SemaphoreHandle_t s_ppgMutex;
+static PPGReading        s_latestPPG  = {};
+static volatile uint8_t  s_bleSeqNum  = 0;
+
+// ML window buffer (allocated once, reused across inference calls)
+static float s_mlInputBuf[SamplingCfg::ML_WINDOW_SAMPLES];
+
+// ============================================================
+// Sensor Task  (Core 1 – sampling + signal processing)
+// ============================================================
+static void sensorTask(void* /*param*/) {
+    // Serial data-capture header (debug builds only)
+#if ENABLE_SERIAL_CAPTURE
+    Serial.println("timestamp_ms,ecg_raw,ecg_filtered,ir_raw,red_raw,spo2,hr");
+#endif
+
+    // Accumulate ECG samples for the next BLE packet
+    int16_t ecgBatch[SamplingCfg::BLE_ECG_BATCH_SIZE];
+    size_t  batchCount = 0;
+
+    uint32_t lastPPGPoll = 0;
+
+    for (;;) {
+        const uint32_t now = millis();
+
+        // ---- PPG: poll every 10 ms (100 Hz) -------------------
+        if (now - lastPPGPoll >= 10) {
+            lastPPGPoll = now;
+            ppg.update();
+            if (ppg.isReady()) {
+                PPGReading r = ppg.getReading();
+                if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
+                    s_latestPPG = r;
+                    xSemaphoreGive(s_ppgMutex);
+                }
+            }
+        }
+
+        // ---- ECG: drain available samples from circular buffer ----
+        ecg.update();
+
+        while (ecg.available() > 0) {
+            int16_t raw = 0;
+            if (ecg.popSamples(&raw, 1) == 0) break;
+
+            // Signal processing (filter + ML window)
+            float filtered = 0.0f;
+            bool  leadOff  = (raw == INT16_MIN);
+
+            if (!leadOff) {
+                filtered = processor.processSample(raw);
+            } else {
+                processor.reset();   // Reset filters on lead-off event
+            }
+
+            // ---- Serial capture (debug build) -----------------
+#if ENABLE_SERIAL_CAPTURE
+            PPGReading snap = {};
+            if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
+                snap = s_latestPPG;
+                xSemaphoreGive(s_ppgMutex);
+            }
+            Serial.printf("%lu,%d,%.2f,%lu,%lu,%u,%u\n",
+                now, (int)raw, filtered,
+                snap.irRaw, snap.redRaw,
+                snap.spo2, snap.heartRate);
+#endif
+
+            // ---- Accumulate into BLE batch --------------------
+            if (!leadOff) {
+                ecgBatch[batchCount++] = static_cast<int16_t>(filtered);
+            }
+
+            // Once batch is full, notify BLE task via queue
+            if (batchCount == SamplingCfg::BLE_ECG_BATCH_SIZE) {
+                PPGReading ppgSnap = {};
+                if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
+                    ppgSnap = s_latestPPG;
+                    xSemaphoreGive(s_ppgMutex);
+                }
+
+                BLECfg::DataPacket pkt = {};
+                pkt.seq_num      = s_bleSeqNum++;
+                pkt.timestamp_ms = now;
+                pkt.n_samples    = SamplingCfg::BLE_ECG_BATCH_SIZE;
+                pkt.spo2         = ppgSnap.spo2;
+                pkt.heart_rate   = ppgSnap.heartRate;
+                pkt.lead_off     = ecg.leadsOn() ? 0x00 : 0x03;
+
+                memcpy(pkt.ecg, ecgBatch,
+                       sizeof(int16_t) * SamplingCfg::BLE_ECG_BATCH_SIZE);
+
+                ble.sendStream(pkt);
+                batchCount = 0;
+            }
+        }
+
+        // ---- ML inference (triggered by stride counter) -------
+        if (processor.isWindowReady()) {
+            processor.getMLWindow(s_mlInputBuf);
+            if (inference.runInference(s_mlInputBuf)) {
+                InferenceResult r = inference.getResult();
+                if (r.valid) {
+                    BLECfg::InferencePacket ipkt = {};
+                    ipkt.marker       = 0xFF;
+                    ipkt.timestamp_ms = millis();
+                    ipkt.class_id     = static_cast<uint8_t>(r.classification);
+                    ipkt.confidence   = r.confidence;
+                    ble.sendInference(ipkt);
+
+#if ENABLE_SERIAL_CAPTURE
+                    Serial.printf("[INFER] class=%u conf=%.2f\n",
+                                  ipkt.class_id, ipkt.confidence);
+#endif
+                }
+            }
+        }
+
+        // Yield briefly to avoid starving the idle task / BLE stack
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+}
+
+// ============================================================
+// setup / loop
+// ============================================================
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+#if ENABLE_SERIAL_CAPTURE
+    Serial.begin(SerialCfg::BAUD_RATE);
+    while (!Serial) { delay(10); }
+#endif
+
+    s_ppgMutex = xSemaphoreCreateMutex();
+
+    // ---- Initialise modules -----------------------------------
+    if (!ecg.begin()) {
+        // ECG init failure – halt
+        while (true) { delay(1000); }
+    }
+
+    if (!ppg.begin()) {
+        // PPG init failure – continue without PPG (non-fatal)
+    }
+
+    if (!inference.begin()) {
+        // Inference init failure – continue without ML
+    }
+
+    if (!ble.begin()) {
+        // BLE failure – halt
+        while (true) { delay(1000); }
+    }
+
+    // ---- Launch sensor task on Core 1 -------------------------
+    xTaskCreatePinnedToCore(
+        sensorTask,
+        "SensorTask",
+        SENSOR_TASK_STACK,
+        nullptr,
+        /*priority=*/ 5,
+        nullptr,
+        /*core=*/     1
+    );
+    // BLE stack runs on Core 0 (managed by NimBLE internals).
+    // No separate BLE task needed – NimBLE handles its own threading.
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-}
-
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+    // Intentionally empty: all work is in FreeRTOS tasks.
+    vTaskDelay(portMAX_DELAY);
 }
