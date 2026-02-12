@@ -1,7 +1,8 @@
 #include "Inference.h"
 #include "model.h"
 
-// TFLite Micro headers
+// TFLite Micro headers (TensorFlowLite_ESP32 library)
+#include <TensorFlowLite_ESP32.h>
 #include "tensorflow/lite/micro/all_ops_resolver.h"
 #include "tensorflow/lite/micro/micro_error_reporter.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"

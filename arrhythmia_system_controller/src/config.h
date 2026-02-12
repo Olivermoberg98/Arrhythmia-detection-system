@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <cstddef>
 
 // ============================================================
 // Pin Assignments
@@ -127,18 +128,18 @@ namespace BLECfg {
     // Wire Protocol
     // ===========================================================
     //
-    // STREAM CHARACTERISTIC  –  DataPacket  (≤ 29 bytes)
+    // STREAM CHARACTERISTIC  –  DataPacket  (26 bytes)
     // ┌─────────┬──────────────────────┬──────────────────────────────────────────┐
     // │ Byte(s) │ Field                │ Description                              │
     // ├─────────┼──────────────────────┼──────────────────────────────────────────┤
     // │   0     │ seq_num   (uint8)    │ Rolling 0-255 counter, detect packet loss│
     // │  1-4    │ timestamp (uint32LE) │ millis() at first sample in this batch   │
-    // │   5     │ n_samples (uint8)    │ Number of ECG samples (≤ 10)             │
-    // │  6-25   │ ecg[n]    (int16LE)  │ Raw – ADC_MIDPOINT, filtered samples     │
-    // │  26     │ spo2      (uint8)    │ SpO₂ percentage (0–100, 0xFF = invalid)  │
-    // │  27     │ heart_rate(uint8)    │ Heart rate bpm  (0xFF = invalid)         │
-    // │  28     │ lead_off  (uint8)    │ Bit-0 = LO+, Bit-1 = LO-. 0 = OK        │
+    // │   5     │ lead_off  (uint8)    │ Bit-0 = LO+, Bit-1 = LO-. 0 = OK        │
+    // │  6-25   │ ecg[10]   (int16LE) │ Filtered ECG samples (raw – ADC_MIDPOINT)│
     // └─────────┴──────────────────────┴──────────────────────────────────────────┘
+    //
+    // Effective ECG rate on the app side: 10 samples / 40 ms = 250 Hz.
+    // Render each sample 4 ms apart for correct waveform scaling.
     //
     // INFERENCE CHARACTERISTIC  –  InferencePacket  (10 bytes)
     // ┌─────────┬──────────────────────┬──────────────────────────────────────────┐
@@ -152,11 +153,8 @@ namespace BLECfg {
     struct DataPacket {
         uint8_t  seq_num;
         uint32_t timestamp_ms;
-        uint8_t  n_samples;
-        int16_t  ecg[10];         // BLE_ECG_BATCH_SIZE
-        uint8_t  spo2;
-        uint8_t  heart_rate;
-        uint8_t  lead_off;
+        uint8_t  lead_off;        // Bit-0 = LO+, Bit-1 = LO-. 0 = leads on
+        int16_t  ecg[10];         // BLE_ECG_BATCH_SIZE filtered samples
     };
 
     struct InferencePacket {
@@ -173,5 +171,5 @@ namespace BLECfg {
 // ============================================================
 namespace SerialCfg {
     constexpr uint32_t BAUD_RATE = 921600;
-    // CSV header: timestamp_ms,ecg_raw,ecg_filtered,ir,red,spo2,hr
+    // CSV header: timestamp_ms,ecg_raw,ecg_filtered
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "../config.h"
+#include "config.h"
 #include "NimBLEDevice.h"
 #include <stdint.h>
 #include <atomic>
@@ -31,11 +31,11 @@ public:
 
     bool begin();
 
-    /** @brief True when a central is connected and subscribed. */
+    /** @brief True when a central is connected. */
     bool isConnected() const { return _connected.load(); }
 
     /**
-     * @brief  Send a data stream packet (ECG + PPG).
+     * @brief  Send a data stream packet (ECG only).
      *         Drops silently if no subscriber.
      */
     void sendStream(const BLECfg::DataPacket& pkt);
@@ -46,9 +46,9 @@ public:
      */
     void sendInference(const BLECfg::InferencePacket& pkt);
 
-    // ---- NimBLEServerCallbacks ----
-    void onConnect   (NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
-    void onDisconnect(NimBLEServer* pServer) override;
+    // ---- NimBLEServerCallbacks (NimBLE 2.x signatures) ----
+    void onConnect   (NimBLEServer* pServer, NimBLEConnInfo& connInfo) override;
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override;
 
 private:
     NimBLEServer*         _server         = nullptr;
@@ -57,5 +57,5 @@ private:
     NimBLECharacteristic* _charConfig     = nullptr;
 
     std::atomic<bool> _connected{false};
-    uint8_t           _connHandle = BLE_HS_CONN_HANDLE_NONE;
+    uint16_t          _connHandle = 0xFFFF;  // BLE_HS_CONN_HANDLE_NONE
 };

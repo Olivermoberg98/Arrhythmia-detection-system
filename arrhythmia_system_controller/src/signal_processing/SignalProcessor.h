@@ -1,5 +1,5 @@
 #pragma once
-#include "../config.h"
+#include "config.h"
 #include <stdint.h>
 #include <stddef.h>
 

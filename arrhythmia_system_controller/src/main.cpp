@@ -1,7 +1,6 @@
 #include "Arduino.h"
 #include "config.h"
 #include "sensors/ecg/ECGSensor.h"
-#include "sensors/ppg/PPGSensor.h"
 #include "signal_processing/SignalProcessor.h"
 #include "ml/Inference.h"
 #include "ble/BLEManager.h"
@@ -10,7 +9,6 @@
 // Module instances
 // ============================================================
 static ECGSensor      ecg;
-static PPGSensor      ppg;
 static SignalProcessor processor;
 static Inference      inference;
 static BLEManager     ble;
@@ -18,8 +16,6 @@ static BLEManager     ble;
 // ============================================================
 // Shared state (inter-task, protected by a mutex)
 // ============================================================
-static SemaphoreHandle_t s_ppgMutex;
-static PPGReading        s_latestPPG  = {};
 static volatile uint8_t  s_bleSeqNum  = 0;
 
 // ML window buffer (allocated once, reused across inference calls)
@@ -31,30 +27,16 @@ static float s_mlInputBuf[SamplingCfg::ML_WINDOW_SAMPLES];
 static void sensorTask(void* /*param*/) {
     // Serial data-capture header (debug builds only)
 #if ENABLE_SERIAL_CAPTURE
-    Serial.println("timestamp_ms,ecg_raw,ecg_filtered,ir_raw,red_raw,spo2,hr");
+    Serial.println("timestamp_ms,ecg_raw,ecg_filtered");
 #endif
 
     // Accumulate ECG samples for the next BLE packet
     int16_t ecgBatch[SamplingCfg::BLE_ECG_BATCH_SIZE];
     size_t  batchCount = 0;
 
-    uint32_t lastPPGPoll = 0;
-
     for (;;) {
         const uint32_t now = millis();
 
-        // ---- PPG: poll every 10 ms (100 Hz) -------------------
-        if (now - lastPPGPoll >= 10) {
-            lastPPGPoll = now;
-            ppg.update();
-            if (ppg.isReady()) {
-                PPGReading r = ppg.getReading();
-                if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
-                    s_latestPPG = r;
-                    xSemaphoreGive(s_ppgMutex);
-                }
-            }
-        }
 
         // ---- ECG: drain available samples from circular buffer ----
         ecg.update();
@@ -75,15 +57,7 @@ static void sensorTask(void* /*param*/) {
 
             // ---- Serial capture (debug build) -----------------
 #if ENABLE_SERIAL_CAPTURE
-            PPGReading snap = {};
-            if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
-                snap = s_latestPPG;
-                xSemaphoreGive(s_ppgMutex);
-            }
-            Serial.printf("%lu,%d,%.2f,%lu,%lu,%u,%u\n",
-                now, (int)raw, filtered,
-                snap.irRaw, snap.redRaw,
-                snap.spo2, snap.heartRate);
+            Serial.printf("%lu,%d,%.2f\n", now, (int)raw, filtered);
 #endif
 
             // ---- Accumulate into BLE batch --------------------
@@ -93,18 +67,9 @@ static void sensorTask(void* /*param*/) {
 
             // Once batch is full, notify BLE task via queue
             if (batchCount == SamplingCfg::BLE_ECG_BATCH_SIZE) {
-                PPGReading ppgSnap = {};
-                if (xSemaphoreTake(s_ppgMutex, 0) == pdTRUE) {
-                    ppgSnap = s_latestPPG;
-                    xSemaphoreGive(s_ppgMutex);
-                }
-
                 BLECfg::DataPacket pkt = {};
                 pkt.seq_num      = s_bleSeqNum++;
                 pkt.timestamp_ms = now;
-                pkt.n_samples    = SamplingCfg::BLE_ECG_BATCH_SIZE;
-                pkt.spo2         = ppgSnap.spo2;
-                pkt.heart_rate   = ppgSnap.heartRate;
                 pkt.lead_off     = ecg.leadsOn() ? 0x00 : 0x03;
 
                 memcpy(pkt.ecg, ecgBatch,
@@ -150,16 +115,10 @@ void setup() {
     while (!Serial) { delay(10); }
 #endif
 
-    s_ppgMutex = xSemaphoreCreateMutex();
-
     // ---- Initialise modules -----------------------------------
     if (!ecg.begin()) {
         // ECG init failure – halt
         while (true) { delay(1000); }
-    }
-
-    if (!ppg.begin()) {
-        // PPG init failure – continue without PPG (non-fatal)
     }
 
     if (!inference.begin()) {

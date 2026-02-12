@@ -1,7 +1,7 @@
 #pragma once
-#include "../../include/ISensor.h"
-#include "../../include/CircularBuffer.h"
-#include "../../src/config.h"
+#include "ISensor.h"
+#include "CircularBuffer.h"
+#include "config.h"
 #include <stdint.h>
 #include <atomic>
 
