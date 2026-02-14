@@ -10,10 +10,6 @@ namespace Pins {
     constexpr int ECG_OUTPUT   = 34;   // Analog input (ADC1_CH6) – must be ADC1
     constexpr int ECG_LO_PLUS  = 32;   // Lead-off detect +
     constexpr int ECG_LO_MINUS = 33;   // Lead-off detect -
-
-    // MAX30102 – I2C (shared bus)
-    constexpr int I2C_SDA      = 21;
-    constexpr int I2C_SCL      = 22;
 }
 
 // ============================================================

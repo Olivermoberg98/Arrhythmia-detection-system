@@ -1,0 +1,47 @@
+Requirement ID,Requirement Summary,Priority,Risk Ref,Implementation File(s),Test Case(s),Status
+FR-BLE-01,Display only named BLE devices,Must,RISK-008,data/ble/BleManager_Clean.kt,TC-BLE-01,Implemented
+FR-BLE-02,Request BLE permissions before scan,Must,,data/ble/BlePermissions.kt | ui/screens/SettingsScreen.kt,TC-BLE-02,Implemented
+FR-BLE-03,Display connection status on Live Monitor,Must,RISK-008,ui/screens/LiveMonitorScreen.kt | data/ble/ConnectionState,TC-BLE-03,Implemented
+FR-BLE-04,Stop recording on BLE loss,Must,RISK-008,ui/viewmodels/LiveMonitorViewModel.kt,TC-BLE-04,Pending
+FR-BLE-05,Notify user of BLE disconnection during recording,Must,RISK-008,ui/screens/LiveMonitorScreen.kt,TC-BLE-05,Pending
+FR-ECG-01,Display live ECG waveform,Must,,ui/screens/LiveMonitorScreen.kt | EcgChartComposable.kt,TC-ECG-01,Implemented
+FR-ECG-02,Waveform updates at least every 100ms,Must,,ui/viewmodels/LiveMonitorViewModel.kt,TC-ECG-02,Implemented
+FR-ECG-03,Display current heart rate,Must,,ui/screens/LiveMonitorScreen.kt,TC-ECG-03,Implemented
+FR-ECG-04,Display signal quality indicator,Must,RISK-003,ui/screens/LiveMonitorScreen.kt,TC-ECG-04,Pending
+FR-ECG-05,Sampling rate 360 Hz,Must,,data/database/entities/Entities.kt,TC-ECG-05,Implemented
+FR-REC-01,Start and stop recording,Must,,ui/screens/LiveMonitorScreen.kt | ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-01,Implemented
+FR-REC-02,Recording only available when BLE connected,Must,,ui/screens/LiveMonitorScreen.kt,TC-REC-02,Implemented
+FR-REC-03,Write recording data incrementally,Must,RISK-006,ui/viewmodels/LiveMonitorViewModel.kt | data/repository/EcgRepository.kt,TC-REC-03,Pending
+FR-REC-04,Mark interrupted sessions as incomplete,Must,RISK-006,data/database/entities/Entities.kt | data/repository/EcgRepository.kt,TC-REC-04,Pending
+FR-REC-05,Inform user of incomplete recording,Must,RISK-006,ui/screens/HistoryScreen.kt | ui/screens/SessionDetailScreen.kt,TC-REC-05,Pending
+FR-REC-06,Minimum recording length 10 seconds,Should,,ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-06,Pending
+FR-ARR-01,Classify beats as Normal/PVC/AFib/Other,Must,RISK-001 RISK-002,ui/viewmodels/LiveMonitorViewModel.kt,TC-ARR-01 TC-ARR-02,Implemented
+FR-ARR-02,Store confidence score with each event,Must,RISK-001,data/database/entities/Entities.kt,TC-ARR-03,Implemented
+FR-ARR-03,Determine health status Normal/Attention/Concerning,Must,RISK-001 RISK-007,data/repository/EcgRepository.kt,TC-ARR-04 TC-ARR-05 TC-ARR-06,Implemented
+FR-ARR-04,Health status thresholds as specified,Must,RISK-001,data/repository/EcgRepository.kt,TC-ARR-04 TC-ARR-05 TC-ARR-06,Implemented
+FR-ARR-05,No clinical language in health status UI,Must,RISK-007,ui/screens/SessionDetailScreen.kt | ui/screens/HistoryScreen.kt,TC-ARR-07,Implemented
+FR-HIS-01,List all sessions with summary stats,Must,,ui/screens/HistoryScreen.kt | ui/viewmodels/HistoryViewModel.kt,—,Implemented
+FR-HIS-02,Sort sessions by date/duration/arrhythmia count,Must,,ui/screens/HistoryScreen.kt,—,Implemented
+FR-HIS-03,Session detail with waveform playback,Must,,ui/screens/SessionDetailScreen.kt | ui/viewmodels/SessionDetailViewModel.kt,—,Implemented
+FR-HIS-04,Export session as PDF and CSV,Should,,utils/ExportManager.kt,—,Implemented
+FR-CON-01,Consent screen on first launch,Must,RISK-005,ui/screens/ConsentScreen.kt | ui/navigation/NavigationHost.kt,TC-CON-01,Implemented
+FR-CON-02,Must accept consent before recording,Must,RISK-005,ui/navigation/NavigationHost.kt,TC-CON-02,Implemented
+FR-CON-03,Record consent with timestamp and version,Must,RISK-005,data/consent/ConsentManager.kt,TC-CON-03,Implemented
+FR-CON-04,Re-prompt if consent version changes,Must,RISK-005,data/consent/ConsentManager.kt | ui/navigation/NavigationHost.kt,TC-CON-04,Implemented
+FR-CON-05,Withdraw consent from Settings,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-CON-05,Implemented
+FR-CON-06,Withdrawal triggers data deletion,Must,RISK-005,data/consent/ConsentManager.kt,TC-CON-06,Implemented
+FR-CON-07,Consent records never deleted,Must,RISK-005,data/consent/ConsentManager.kt,TC-CON-07,Implemented
+FR-AUD-01,Log all specified actions to audit_log,Must,RISK-005,data/consent/ConsentManager.kt | ui/navigation/NavigationHost.kt,TC-AUD-01 TC-AUD-02 TC-AUD-03,Implemented
+FR-AUD-02,Audit entries include timestamp/action/sessionId,Must,RISK-005,data/database/entities/ConsentAndAuditEntities.kt,TC-AUD-04,Implemented
+FR-AUD-03,Audit log retained until explicit user deletion,Must,RISK-005,data/consent/ConsentManager.kt,TC-AUD-05,Implemented
+FR-DEL-01,Delete All Recordings button in Settings,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-DEL-01,Implemented
+FR-DEL-02,Confirmation dialog before deletion,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-DEL-02,Implemented
+FR-DEL-03,Dialog explains what is deleted and retained,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-DEL-03,Implemented
+FR-DEL-04,Deletion removes sessions/readings/events/audit log,Must,RISK-005,data/consent/ConsentManager.kt | data/database/dao/Daos.kt,TC-DEL-04,Implemented
+NFR-01,Support Android API 26+,Must,,build.gradle.kts,—,Implemented
+NFR-02,No network data transmission,Must,,— (no network calls in codebase),—,Implemented
+NFR-03,Live waveform >= 15 FPS,Should,,EcgChartComposable.kt,TC-PERF-01,Pending
+NFR-04,Crash rate < 0.1% of sessions,Must,,— (crash monitoring required),TC-PERF-02,Pending
+NFR-05,DB write latency < 50ms p95,Should,,data/repository/EcgRepository.kt,TC-PERF-03,Pending
+NFR-06,Health status text reviewed by non-technical user,Must,,ui/screens/SessionDetailScreen.kt,TC-ARR-07,Pending
+NFR-07,Consent text reviewed by legal/regulatory professional,Must,,ui/screens/ConsentScreen.kt,—,Pending
