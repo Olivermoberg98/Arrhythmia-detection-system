@@ -28,6 +28,9 @@ interface EcgSessionDao {
     @Query("DELETE FROM ecg_sessions WHERE id = :sessionId")
     suspend fun deleteSessionById(sessionId: String)
 
+    @Query("DELETE FROM ecg_sessions")
+    suspend fun deleteAll()
+
     @Query("SELECT COUNT(*) FROM ecg_sessions")
     suspend fun getSessionCount(): Int
 }
@@ -49,6 +52,9 @@ interface EcgReadingDao {
 
     @Query("DELETE FROM ecg_readings WHERE sessionId = :sessionId")
     suspend fun deleteReadingsForSession(sessionId: String)
+
+    @Query("DELETE FROM ecg_readings")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -68,6 +74,9 @@ interface ArrhythmiaEventDao {
 
     @Query("DELETE FROM arrhythmia_events WHERE sessionId = :sessionId")
     suspend fun deleteEventsForSession(sessionId: String)
+
+    @Query("DELETE FROM arrhythmia_events")
+    suspend fun deleteAll()
 
     @Query("SELECT COUNT(*) FROM arrhythmia_events WHERE sessionId = :sessionId AND type = :type")
     suspend fun getEventCountByType(sessionId: String, type: String): Int

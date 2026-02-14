@@ -32,12 +32,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.ble.BleDevice
 import com.ecgmonitor.app.data.ble.BlePermissions
 import com.ecgmonitor.app.data.ble.ConnectionState
+import com.ecgmonitor.app.data.consent.ConsentManager
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel) {
+fun SettingsScreen(viewModel: SettingsViewModel, consentManager: ConsentManager) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -222,10 +224,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text("About", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(modifier = Modifier.height(12.dp))
                         SettingRow("Version", "1.0.0")
-                        SettingRow("Sampling Rate", "360 Hz")
+                        SettingRow("Sampling Rate", "250 Hz")
                         SettingRow("Connection", "Bluetooth LE")
                     }
                 }
+            }
+
+            item {
+                DataPrivacyCard(consentManager = consentManager)
             }
         }
     }
@@ -363,4 +369,114 @@ private fun SettingRow(label: String, value: String) {
 private fun isBluetoothEnabled(context: Context): Boolean {
     val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     return manager?.adapter?.isEnabled == true
+}
+
+@Composable
+fun DataPrivacyCard(consentManager: ConsentManager) {
+    val coroutineScope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showWithdrawConfirm by remember { mutableStateOf(false) }
+    var actionComplete by remember { mutableStateOf<String?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.PrivacyTip, contentDescription = null, tint = MedicalCyan, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Data & Privacy", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = { showDeleteConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MedicalRed)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Delete All Recordings")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { showWithdrawConfirm = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MedicalOrange)
+            ) {
+                Text("Withdraw Consent")
+            }
+
+            actionComplete?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, fontSize = 12.sp, color = MedicalGreen)
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = MedicalCardBackground,
+            title = { Text("Delete all recordings?", color = Color.White) },
+            text = {
+                Text(
+                    "Permanently deletes all ECG recordings, arrhythmia events, and statistics from this device. Cannot be undone. Your consent record is retained as required by law.",
+                    color = MedicalTextSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        coroutineScope.launch {
+                            consentManager.deleteAllUserData()
+                            actionComplete = "All recordings deleted"
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MedicalRed)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showWithdrawConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWithdrawConfirm = false },
+            containerColor = MedicalCardBackground,
+            title = { Text("Withdraw consent?", color = Color.White) },
+            text = {
+                Text(
+                    "Withdrawing consent will delete all recordings and disable data storage. The app will require re-consent to function. You can re-consent at any time.",
+                    color = MedicalTextSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showWithdrawConfirm = false
+                        coroutineScope.launch {
+                            consentManager.deleteAllUserData()
+                            consentManager.recordConsent(granted = false)
+                            actionComplete = "Consent withdrawn. Please restart the app."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MedicalOrange)
+                ) { Text("Withdraw") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showWithdrawConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
 }

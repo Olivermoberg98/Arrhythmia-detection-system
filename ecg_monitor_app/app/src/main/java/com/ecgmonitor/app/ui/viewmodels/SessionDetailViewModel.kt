@@ -96,7 +96,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun showInitialWindow() {
-        val windowSize = 3000 // Show first 3000 samples (~8 seconds)
+        val windowSize = 2000 // Show 2000 samples
         val initialReadings = allReadings.take(windowSize)
         _currentReadings.value = initialReadings
         updateVisibleEvents(initialReadings)
@@ -111,7 +111,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         _playbackState.value = PlaybackState.Playing
 
         viewModelScope.launch {
-            val samplingRate = _sessionData.value?.session?.samplingRate ?: 360
+            val samplingRate = _sessionData.value?.session?.samplingRate ?: 250
             val delayMs = (1000L / (samplingRate * _playbackSpeed.value)).toLong()
             val batchSize = 10
             val windowSize = 3000

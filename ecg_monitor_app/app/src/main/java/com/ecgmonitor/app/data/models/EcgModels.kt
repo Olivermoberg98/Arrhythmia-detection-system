@@ -20,7 +20,7 @@ data class EcgSession(
     val patientId: String? = null,
     val startTime: Long,
     val endTime: Long? = null,
-    val samplingRate: Int, // Hz (e.g., 360 for MIT-BIH, 300 for your ESP32)
+    val samplingRate: Int, // Hz
     val source: DataSource,
     val totalSamples: Int = 0,
     val duration: Float = 0f // seconds

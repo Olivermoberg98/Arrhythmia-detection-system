@@ -119,7 +119,7 @@ fun LiveMonitorScreen(
                         )
 
                         Text(
-                            "360 Hz",
+                            "250 Hz",
                             color = MedicalTextSecondary,
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace
@@ -133,7 +133,7 @@ fun LiveMonitorScreen(
                         EcgChart(
                             ecgReadings = ecgReadings,
                             arrhythmiaEvents = visibleEvents,
-                            samplingRate = 360,
+                            samplingRate = 250,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)

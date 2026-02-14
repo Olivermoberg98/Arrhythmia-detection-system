@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ecgmonitor.app.data.database.converters.Converters
 import com.ecgmonitor.app.data.database.dao.*
 import com.ecgmonitor.app.data.database.entities.*
@@ -13,10 +15,12 @@ import com.ecgmonitor.app.data.database.entities.*
     entities = [
         EcgSessionEntity::class,
         EcgReadingEntity::class,
-        ArrhythmiaEventEntity::class
+        ArrhythmiaEventEntity::class,
+        ConsentEntity::class,
+        AuditLogEntity::class
     ],
-    version = 1,
-    exportSchema = false
+    version = 2,
+    exportSchema = true  // Set true so schema history is tracked in version control
 )
 @TypeConverters(Converters::class)
 abstract class EcgDatabase : RoomDatabase() {
@@ -24,10 +28,36 @@ abstract class EcgDatabase : RoomDatabase() {
     abstract fun sessionDao(): EcgSessionDao
     abstract fun readingDao(): EcgReadingDao
     abstract fun eventDao(): ArrhythmiaEventDao
+    abstract fun consentDao(): ConsentDao
+    abstract fun auditLogDao(): AuditLogDao
 
     companion object {
         @Volatile
         private var INSTANCE: EcgDatabase? = null
+
+        // Migration from version 1 (no consent/audit) to version 2
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS consent_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        consentVersion TEXT NOT NULL,
+                        granted INTEGER NOT NULL,
+                        ipAddress TEXT
+                    )"""
+                )
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS audit_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        action TEXT NOT NULL,
+                        sessionId TEXT,
+                        detail TEXT
+                    )"""
+                )
+            }
+        }
 
         fun getDatabase(context: Context): EcgDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -36,7 +66,7 @@ abstract class EcgDatabase : RoomDatabase() {
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                 INSTANCE = instance
                 instance

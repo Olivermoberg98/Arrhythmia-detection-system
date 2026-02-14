@@ -44,7 +44,7 @@ class EcgChartView @JvmOverloads constructor(
         private const val MARKER_WARNING_COLOR = 0xFFFFA502.toInt() // Orange
     }
 
-    private var samplingRate: Int = 360 // Default MIT-BIH rate
+    private var samplingRate: Int = 250
     private val ecgDataSet: LineDataSet
     private val entries = ArrayList<Entry>()
 

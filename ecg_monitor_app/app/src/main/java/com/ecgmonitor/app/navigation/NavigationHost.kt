@@ -4,165 +4,176 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
+import com.ecgmonitor.app.data.consent.ConsentManager
 import com.ecgmonitor.app.ui.screens.*
 import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
+import com.ecgmonitor.app.ui.theme.MedicalGreen
+import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
 import com.ecgmonitor.app.ui.viewmodels.*
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EcgMonitorApp() {
+fun NavigationHost() {
+    val context = LocalContext.current
+    val consentManager = remember { ConsentManager(context) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Tri-state: null = still checking, true = consented, false = needs consent
+    var consentGranted by remember { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(Unit) {
+        consentGranted = consentManager.hasValidConsent()
+        if (consentGranted == true) {
+            consentManager.log(com.ecgmonitor.app.data.database.entities.AuditAction.APP_OPENED)
+        }
+    }
+
+    when (consentGranted) {
+        null -> {
+            // Brief loading state while checking DB
+        }
+        false -> {
+            ConsentScreen(
+                onAccept = {
+                    coroutineScope.launch {
+                        consentManager.recordConsent(granted = true)
+                        consentGranted = true
+                    }
+                },
+                onDecline = {
+                    coroutineScope.launch {
+                        consentManager.recordConsent(granted = false)
+                        // Leave consentGranted = false — user stays on consent screen
+                        // They can re-open the app and accept later
+                    }
+                }
+            )
+        }
+        true -> {
+            MainAppNavigation(consentManager = consentManager)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainAppNavigation(consentManager: ConsentManager) {
     val navController = rememberNavController()
+    val coroutineScope = rememberCoroutineScope()
+
+    val bottomNavItems = listOf(
+        BottomNavItem("live", Icons.Default.MonitorHeart, "Live"),
+        BottomNavItem("history", Icons.Default.History, "History"),
+        BottomNavItem("settings", Icons.Default.Settings, "Settings")
+    )
+
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute?.startsWith("session_detail") == false
 
     Scaffold(
         bottomBar = {
-            BottomNavigationBar(navController)
-        }
-    ) { innerPadding ->
-        NavigationHost(
-            navController = navController,
-            modifier = Modifier.padding(innerPadding)
-        )
-    }
-}
+            if (showBottomBar) {
+                NavigationBar(containerColor = MedicalDarkBlue) {
+                    bottomNavItems.forEach { item ->
+                        val selected = navBackStackEntry?.destination?.hierarchy
+                            ?.any { it.route == item.route } == true
 
-@Composable
-fun NavigationHost(
-    navController: NavHostController,
-    modifier: Modifier = Modifier
-) {
-    NavHost(
-        navController = navController,
-        startDestination = Screen.LiveMonitor,
-        modifier = modifier
-    ) {
-        // Live Monitor Screen
-        composable<Screen.LiveMonitor> {
-            val viewModel: LiveMonitorViewModel = viewModel()
-            LiveMonitorScreen(
-                viewModel = viewModel,
-                onRecordingSaved = { sessionId ->
-                    // Navigate to session detail after saving
-                    navController.navigate(Screen.SessionDetail(sessionId))
-                }
-            )
-        }
-
-        // History Screen
-        composable<Screen.History> {
-            val viewModel: HistoryViewModel = viewModel()
-            HistoryScreen(
-                viewModel = viewModel,
-                onSessionClick = { sessionId ->
-                    navController.navigate(Screen.SessionDetail(sessionId))
-                }
-            )
-        }
-
-        // Session Detail Screen
-        composable<Screen.SessionDetail> { backStackEntry ->
-            val sessionDetail: Screen.SessionDetail = backStackEntry.toRoute()
-            val viewModel: SessionDetailViewModel = viewModel()
-            SessionDetailScreen(
-                sessionId = sessionDetail.sessionId,
-                viewModel = viewModel,
-                onBack = { navController.navigateUp() }
-            )
-        }
-
-        // Settings Screen
-        composable<Screen.Settings> {
-            val viewModel: SettingsViewModel = viewModel()
-            SettingsScreen(viewModel = viewModel)
-        }
-    }
-}
-
-@Composable
-fun BottomNavigationBar(navController: NavHostController) {
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-
-    // Hide bottom nav on SessionDetail screen
-    val shouldShowBottomBar = currentDestination?.hierarchy?.none {
-        it.route?.contains("SessionDetail") == true
-    } ?: true
-
-    if (!shouldShowBottomBar) return
-
-    NavigationBar(
-        containerColor = MedicalDarkBlue
-    ) {
-        bottomNavItems.forEach { item ->
-            val selected = currentDestination?.hierarchy?.any {
-                it.route == item.route::class.qualifiedName
-            } == true
-
-            NavigationBarItem(
-                icon = {
-                    Icon(
-                        item.icon,
-                        contentDescription = item.title
-                    )
-                },
-                label = { Text(item.title) },
-                selected = selected,
-                onClick = {
-                    navController.navigate(item.route) {
-                        // Pop up to start destination to avoid building up backstack
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        // Avoid multiple copies of same destination
-                        launchSingleTop = true
-                        // Restore state when re-selecting previously selected item
-                        restoreState = true
+                        NavigationBarItem(
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MedicalGreen,
+                                selectedTextColor = MedicalGreen,
+                                unselectedIconColor = MedicalTextSecondary,
+                                unselectedTextColor = MedicalTextSecondary,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
                     }
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
-                    unselectedIconColor = Color.White.copy(alpha = 0.6f),
-                    unselectedTextColor = Color.White.copy(alpha = 0.6f),
-                    indicatorColor = Color.White.copy(alpha = 0.2f)
+                }
+            }
+        }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = "live",
+            modifier = Modifier.padding(paddingValues)
+        ) {
+            composable("live") {
+                val viewModel: LiveMonitorViewModel = viewModel()
+                LiveMonitorScreen(
+                    viewModel = viewModel,
+                    onRecordingSaved = { sessionId ->
+                        coroutineScope.launch {
+                            consentManager.log(
+                                action = com.ecgmonitor.app.data.database.entities.AuditAction.SESSION_RECORDED,
+                                sessionId = sessionId
+                            )
+                        }
+                        navController.navigate("session_detail/$sessionId")
+                    }
                 )
-            )
+            }
+            composable("history") {
+                val viewModel: HistoryViewModel = viewModel()
+                HistoryScreen(
+                    viewModel = viewModel,
+                    onSessionClick = { sessionId ->
+                        coroutineScope.launch {
+                            consentManager.log(
+                                action = com.ecgmonitor.app.data.database.entities.AuditAction.SESSION_VIEWED,
+                                sessionId = sessionId
+                            )
+                        }
+                        navController.navigate("session_detail/$sessionId")
+                    }
+                )
+            }
+            composable("session_detail/{sessionId}") { backStackEntry ->
+                val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+                val viewModel: SessionDetailViewModel = viewModel()
+                SessionDetailScreen(
+                    sessionId = sessionId,
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable("settings") {
+                val viewModel: SettingsViewModel = viewModel()
+                SettingsScreen(
+                    viewModel = viewModel,
+                    consentManager = consentManager
+                )
+            }
         }
     }
 }
 
-data class BottomNavItem(
-    val title: String,
-    val icon: ImageVector,
-    val route: Screen
-)
-
-val bottomNavItems = listOf(
-    BottomNavItem(
-        title = "Live",
-        icon = Icons.Default.Favorite,
-        route = Screen.LiveMonitor
-    ),
-    BottomNavItem(
-        title = "History",
-        icon = Icons.Default.History,
-        route = Screen.History
-    ),
-    BottomNavItem(
-        title = "Settings",
-        icon = Icons.Default.Settings,
-        route = Screen.Settings
-    )
+private data class BottomNavItem(
+    val route: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String
 )

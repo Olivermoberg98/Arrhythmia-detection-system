@@ -17,7 +17,7 @@ import com.ecgmonitor.app.data.models.EcgReading
 fun EcgChart(
     ecgReadings: List<EcgReading>,
     arrhythmiaEvents: List<ArrhythmiaEvent> = emptyList(),
-    samplingRate: Int = 360,
+    samplingRate: Int = 250,
     modifier: Modifier = Modifier
 ) {
     // Create and remember the chart view
@@ -48,7 +48,7 @@ fun EcgChart(
 fun StreamingEcgChart(
     ecgReadings: List<EcgReading>,
     arrhythmiaEvents: List<ArrhythmiaEvent> = emptyList(),
-    samplingRate: Int = 360,
+    samplingRate: Int = 250,
     modifier: Modifier = Modifier
 ) {
     val chartView = remember { mutableListOf<EcgChartView>() }
