@@ -86,6 +86,21 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     private var recordingStartTime    = 0L
 
     /**
+     * Heart-rate samples collected during the active recording.
+     * Each detected beat appends the current smoothed BPM so we can compute
+     * accurate min/max/avg for the saved session — replacing the broken
+     * event-timestamp approach in EcgRepository.
+     */
+    private val recordingHrSamples = mutableListOf<Int>()
+
+    /**
+     * Exponential moving average state for heart-rate display.
+     * Prevents the BPM badge from flickering on every R-peak.
+     * Reset to 0f when leads disconnect or data is cleared.
+     */
+    private var smoothedHeartRate = 0f
+
+    /**
      * Monotonically increasing sample counter across the current live session.
      * Reset on every startRecording() call so saved sessions always start at 0.
      */
@@ -136,6 +151,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                     Timber.i("Leads reconnected — resetting beat detector")
                     rollingWindow.clear()
                     recentBeatTimestamps.clear()
+                    smoothedHeartRate = 0f
                 }
             }
         }
@@ -311,10 +327,10 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         // Reject flat signal (noise / leads-off transient)
         if (amplitude < MIN_SIGNAL_AMPLITUDE) return
 
-        // Threshold = bottom of range + (amplitude × factor).
-        // This means "sample must be in the top (1-factor) portion of the observed range".
-        // The old formula used midpoint+factor×amplitude which placed the threshold
-        // ABOVE the R-peak for a symmetric signal, causing zero beats to be detected.
+        // Threshold = bottom of range + amplitude × factor.
+        // The sample must be in the top (1 – BEAT_THRESHOLD_FACTOR) portion of the
+        // signal range, which is where R-peaks live.  The old midpoint+factor formula
+        // placed the threshold ABOVE the R-peak for symmetric signals → 0 bpm.
         val threshold = windowMin + (amplitude * BEAT_THRESHOLD_FACTOR)
 
         if (reading.voltage <= threshold) return
@@ -330,9 +346,12 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * Register a confirmed R-peak and update the rolling heart-rate estimate.
-     * Deliberately does NOT create [ArrhythmiaEvent]s — those come exclusively
-     * from [processInferenceResult] now.
+     * Register a confirmed R-peak, apply EMA smoothing to the BPM display, and
+     * collect the smoothed value into the recording HR buffer.
+     *
+     * EMA formula: new = α × instant + (1 – α) × previous
+     * With α = [HR_EMA_ALPHA] = 0.25 the display settles in ~3–4 beats and ignores
+     * single noisy intervals, giving stable BPM without visible lag.
      */
     private fun recordBeat(timestampMs: Long) {
         if (recentBeatTimestamps.size >= MAX_BEAT_HISTORY) recentBeatTimestamps.removeFirst()
@@ -343,7 +362,22 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 recentBeatTimestamps[i] - recentBeatTimestamps[i - 1]
             }
             val avgRrMs = rrIntervals.average()
-            _heartRate.value = (60_000.0 / avgRrMs).toInt().coerceIn(30, 250)
+            val instantHr = (60_000.0 / avgRrMs).toFloat().coerceIn(30f, 250f)
+
+            // Exponential moving average — seed on first beat so display isn't 0
+            smoothedHeartRate = if (smoothedHeartRate == 0f) {
+                instantHr
+            } else {
+                HR_EMA_ALPHA * instantHr + (1f - HR_EMA_ALPHA) * smoothedHeartRate
+            }
+
+            val displayHr = smoothedHeartRate.toInt().coerceIn(30, 250)
+            _heartRate.value = displayHr
+
+            // Accumulate for session stats while recording
+            if (_isRecording.value) {
+                recordingHrSamples.add(displayHr)
+            }
         }
     }
 
@@ -360,9 +394,13 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         recordingBuffer.clear()
         recordingEventsBuffer.clear()
+        recordingHrSamples.clear()
         recordingSampleIndex = 0
         recordingStartTime   = System.currentTimeMillis()
         _isRecording.value   = true
+
+        // Clear the live display so the recording always starts with a blank chart.
+        _ecgReadings.value = emptyList()
 
         _currentSession.value = EcgSession(
             id           = UUID.randomUUID().toString(),
@@ -392,15 +430,26 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         )
 
         if (session != null && recordingBuffer.isNotEmpty()) {
+            // Snapshot HR samples before the coroutine launches (buffer cleared in finally)
+            val hrSnapshot = recordingHrSamples.toList()
+            val heartRateStats = if (hrSnapshot.isNotEmpty()) {
+                EcgRepository.HeartRateStats(
+                    avg = hrSnapshot.average().toInt().coerceIn(30, 250),
+                    min = hrSnapshot.min().coerceIn(30, 250),
+                    max = hrSnapshot.max().coerceIn(30, 250)
+                )
+            } else null
+
             viewModelScope.launch {
                 try {
                     val sessionId = repository.saveSession(
                         readings        = recordingBuffer.toList(),
                         events          = recordingEventsBuffer.toList(),
                         sessionMetadata = session,
-                        sessionName     = null   // Auto-generated by repository
+                        sessionName     = null,
+                        heartRateStats  = heartRateStats
                     )
-                    Timber.i("Saved session $sessionId — ${recordingBuffer.size} samples, ${duration}s")
+                    Timber.i("Saved session $sessionId — ${recordingBuffer.size} samples, ${duration}s, HR avg=${heartRateStats?.avg}")
                     _uiState.value = LiveMonitorUiState.RecordingSaved(sessionId)
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to save recording")
@@ -408,6 +457,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 } finally {
                     recordingBuffer.clear()
                     recordingEventsBuffer.clear()
+                    recordingHrSamples.clear()
                 }
             }
         }
@@ -445,7 +495,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         _droppedPacketCount.value   = 0
         recentBeatTimestamps.clear()
         rollingWindow.clear()
-        recordingSampleIndex = 0
+        smoothedHeartRate           = 0f
+        recordingSampleIndex        = 0
 
         if (!_isRecording.value) _currentSession.value = null
     }
@@ -467,7 +518,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Number of samples kept in the live display buffer.
          * 3 000 samples ÷ 250 Hz = 12 seconds of waveform on screen.
          */
-        private const val VISIBLE_WINDOW_SAMPLES = 2_000
+        private const val VISIBLE_WINDOW_SAMPLES = 3_000
 
         /** Maximum inference/arrhythmia events shown in the event overlay. */
         private const val MAX_VISIBLE_EVENTS = 50
@@ -477,9 +528,21 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Threshold = midpoint + BEAT_THRESHOLD_FACTOR × peak-to-peak amplitude.
          */
         private const val ROLLING_WINDOW_SAMPLES  = 250      // 1 s @ 250 Hz
-        private const val BEAT_THRESHOLD_FACTOR   = 0.70f    // R-peak must be in top 30% of signal range; prevents T-wave triggers
+        /**
+         * R-peak threshold: sample must be in the top (1 – BEAT_THRESHOLD_FACTOR) of the
+         * signal range.  0.70 → top 30%.  R-peaks typically occupy the top 15–20%, T-waves
+         * ~40–50%, so this cleanly separates them with margin.
+         */
+        private const val BEAT_THRESHOLD_FACTOR   = 0.70f
         private const val MIN_BEAT_INTERVAL_MS    = 300L     // ~200 bpm max; rejects double-triggers
         private const val MAX_BEAT_HISTORY        = 10       // RR intervals averaged for HR
+
+        /**
+         * EMA alpha for heart-rate display smoothing.
+         * 0.25 → ~3–4 beats to fully adapt; suppresses single noisy RR intervals
+         * without making the display feel laggy.
+         */
+        private const val HR_EMA_ALPHA             = 0.25f
 
         /**
          * Minimum peak-to-peak amplitude (raw int16 units) below which we treat the

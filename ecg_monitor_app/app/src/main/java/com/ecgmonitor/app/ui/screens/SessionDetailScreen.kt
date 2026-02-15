@@ -313,7 +313,7 @@ private fun StatisticsSection(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.padding(16.dp),
+        modifier = modifier,
         colors = CardDefaults.cardColors(
             containerColor = MedicalCardBackground
         ),

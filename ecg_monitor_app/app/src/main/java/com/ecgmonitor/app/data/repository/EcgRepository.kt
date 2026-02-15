@@ -35,18 +35,28 @@ class EcgRepository(
     }
 
     /**
+     * Pre-computed heart-rate statistics passed in from the ViewModel.
+     * Avoids the broken fallback that tried to compute RR intervals from
+     * ESP32 inference events (which are rhythm classifications, not beat markers).
+     */
+    data class HeartRateStats(val avg: Int, val min: Int, val max: Int)
+
+    /**
      * Save a complete ECG session
      */
     suspend fun saveSession(
         readings: List<EcgReading>,
         events: List<ArrhythmiaEvent>,
         sessionMetadata: EcgSession,
-        sessionName: String? = null
+        sessionName: String? = null,
+        heartRateStats: HeartRateStats? = null
     ): String {
         val sessionId = sessionMetadata.id
 
-        // Calculate statistics
-        val stats = calculateSessionStatistics(events, sessionMetadata)
+        // Calculate statistics — use ViewModel-supplied HR stats when available
+        // (those come from real beat detection).  Fall back to event-based calculation
+        // only for MIT-BIH sessions where individual beat events ARE available.
+        val stats = calculateSessionStatistics(events, sessionMetadata, heartRateStats)
 
         // Create session entity
         val sessionEntity = EcgSessionEntity(
@@ -197,25 +207,37 @@ class EcgRepository(
 
     private fun calculateSessionStatistics(
         events: List<ArrhythmiaEvent>,
-        metadata: EcgSession
+        metadata: EcgSession,
+        providedHrStats: HeartRateStats? = null
     ): SessionStatistics {
         val totalBeats = events.size
 
-        // Calculate heart rate from R-R intervals
-        val rrIntervals = mutableListOf<Long>()
-        for (i in 1 until events.size) {
-            rrIntervals.add(events[i].timestamp - events[i - 1].timestamp)
-        }
+        // Prefer ViewModel-supplied HR stats (accurate beat detection).
+        // Fall back to RR-from-events only when not provided (e.g. MIT-BIH import).
+        val avgHR: Int
+        val minHR: Int
+        val maxHR: Int
 
-        val avgHR = if (rrIntervals.isNotEmpty()) {
-            (60000.0 / rrIntervals.average()).toInt().coerceIn(40, 200)
+        if (providedHrStats != null) {
+            avgHR = providedHrStats.avg
+            minHR = providedHrStats.min
+            maxHR = providedHrStats.max
         } else {
-            75
+            // Legacy path: compute from event timestamps (only valid when events are
+            // individual beat annotations, not rhythm-classification intervals).
+            val rrIntervals = mutableListOf<Long>()
+            for (i in 1 until events.size) {
+                rrIntervals.add(events[i].timestamp - events[i - 1].timestamp)
+            }
+            avgHR = if (rrIntervals.isNotEmpty()) {
+                (60000.0 / rrIntervals.average()).toInt().coerceIn(40, 200)
+            } else {
+                70  // neutral default — still better than always showing 75
+            }
+            val hrValues = rrIntervals.map { (60000.0 / it).toInt() }
+            minHR = hrValues.minOrNull()?.coerceIn(40, 200) ?: avgHR
+            maxHR = hrValues.maxOrNull()?.coerceIn(40, 200) ?: avgHR
         }
-
-        val hrValues = rrIntervals.map { (60000.0 / it).toInt() }
-        val minHR = hrValues.minOrNull()?.coerceIn(40, 200) ?: avgHR
-        val maxHR = hrValues.maxOrNull()?.coerceIn(40, 200) ?: avgHR
 
         // Count arrhythmia types
         val normalBeats = events.count { it.type == ArrhythmiaType.NORMAL }

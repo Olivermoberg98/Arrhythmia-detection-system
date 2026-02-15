@@ -120,9 +120,13 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
                 val endIndex = minOf(currentPlaybackIndex + batchSize, allReadings.size)
                 currentPlaybackIndex = endIndex
 
-                // Show sliding window centered on current position
-                val windowStart = maxOf(0, currentPlaybackIndex - windowSize / 2)
-                val windowEnd = minOf(allReadings.size, windowStart + windowSize)
+                // The window's RIGHT edge is the current position.
+                // windowStart extends back by windowSize so the window is always full
+                // (except at the very beginning of the recording).
+                // This prevents the "zoom in" effect that occurred when the window was
+                // centered on currentPlaybackIndex near the end of the recording.
+                val windowEnd   = currentPlaybackIndex
+                val windowStart = maxOf(0, windowEnd - windowSize)
                 val visibleWindow = allReadings.subList(windowStart, windowEnd)
 
                 _currentReadings.value = visibleWindow
@@ -134,6 +138,10 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
             }
 
             if (currentPlaybackIndex >= allReadings.size) {
+                // Freeze on the last full window rather than an empty one
+                val windowEnd   = allReadings.size
+                val windowStart = maxOf(0, windowEnd - windowSize)
+                _currentReadings.value = allReadings.subList(windowStart, windowEnd)
                 _playbackState.value = PlaybackState.Completed
                 isPlaying = false
             }
@@ -156,11 +164,11 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         currentPlaybackIndex = targetIndex
         _playbackProgress.value = progress
 
-        // Show window around target index
-        val windowSize = 2000
-        val startIndex = maxOf(0, targetIndex - windowSize / 2)
-        val endIndex = minOf(allReadings.size, startIndex + windowSize)
-        val readings = allReadings.subList(startIndex, endIndex)
+        // Same right-edge window as startPlayback — keeps window size consistent
+        val windowSize  = 2000
+        val windowEnd   = targetIndex
+        val windowStart = maxOf(0, windowEnd - windowSize)
+        val readings = allReadings.subList(windowStart, windowEnd)
 
         _currentReadings.value = readings
         updateVisibleEvents(readings)
