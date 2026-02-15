@@ -1,13 +1,24 @@
 package com.ecgmonitor.app.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -17,6 +28,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ecgmonitor.app.data.consent.ConsentManager
 import com.ecgmonitor.app.ui.screens.*
+import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
 import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
 import com.ecgmonitor.app.ui.theme.MedicalGreen
 import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
@@ -45,21 +57,60 @@ fun NavigationHost() {
             // Brief loading state while checking DB
         }
         false -> {
-            ConsentScreen(
-                onAccept = {
-                    coroutineScope.launch {
-                        consentManager.recordConsent(granted = true)
-                        consentGranted = true
-                    }
-                },
-                onDecline = {
-                    coroutineScope.launch {
-                        consentManager.recordConsent(granted = false)
-                        // Leave consentGranted = false — user stays on consent screen
-                        // They can re-open the app and accept later
+            var declinedConsent by remember { mutableStateOf(false) }
+            if (declinedConsent) {
+                // Show a gentle "app is locked" screen
+                Box(
+                    modifier = Modifier.fillMaxSize().background(MedicalDarkBackground),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MedicalTextSecondary,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Text(
+                            "App unavailable",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            "ECG Monitor requires your consent to store and process health data. Without it, recordings and monitoring are unavailable.",
+                            fontSize = 14.sp,
+                            color = MedicalTextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                        Button(
+                            onClick = { declinedConsent = false },  // takes them back to consent screen
+                            colors = ButtonDefaults.buttonColors(containerColor = MedicalGreen)
+                        ) {
+                            Text("Review consent again")
+                        }
                     }
                 }
-            )
+            } else {
+                ConsentScreen(
+                    onAccept = {
+                        coroutineScope.launch {
+                            consentManager.recordConsent(granted = true)
+                            consentGranted = true
+                        }
+                    },
+                    onDecline = {
+                        coroutineScope.launch {
+                            consentManager.recordConsent(granted = false)
+                        }
+                        declinedConsent = true  // flip to locked screen instead of closing
+                    }
+                )
+            }
         }
         true -> {
             MainAppNavigation(consentManager = consentManager)

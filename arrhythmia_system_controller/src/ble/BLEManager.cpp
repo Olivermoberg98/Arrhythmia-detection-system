@@ -40,8 +40,8 @@ bool BLEManager::begin() {
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->addServiceUUID(BLECfg::SERVICE_UUID);
     adv->setName(BLECfg::DEVICE_NAME);
-    adv->setMinInterval(BLECfg::CONN_INTERVAL_MIN);
-    adv->setMaxInterval(BLECfg::CONN_INTERVAL_MAX);
+    adv->setMinInterval(BLECfg::ADV_INTERVAL_MIN);
+    adv->setMaxInterval(BLECfg::ADV_INTERVAL_MAX);
     adv->start();
 
     return true;

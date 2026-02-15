@@ -5,9 +5,7 @@ import com.ecgmonitor.app.data.database.entities.*
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
 import com.ecgmonitor.app.data.models.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import timber.log.Timber
-import java.util.UUID
 
 class EcgRepository(
     private val database: EcgDatabase,

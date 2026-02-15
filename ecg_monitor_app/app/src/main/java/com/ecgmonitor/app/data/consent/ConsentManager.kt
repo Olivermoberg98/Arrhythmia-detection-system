@@ -6,7 +6,6 @@ import com.ecgmonitor.app.data.database.entities.AuditAction
 import com.ecgmonitor.app.data.database.entities.AuditLogEntity
 import com.ecgmonitor.app.data.database.entities.ConsentEntity
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import timber.log.Timber
 
 /**

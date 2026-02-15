@@ -1,8 +1,6 @@
 package com.ecgmonitor.app.ui.screens
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,16 +20,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.database.entities.HealthStatus
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
-import com.ecgmonitor.app.data.models.ArrhythmiaType
 import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.*
-import com.ecgmonitor.app.utils.ExportManager
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 

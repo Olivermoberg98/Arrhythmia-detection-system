@@ -117,8 +117,11 @@ namespace BLECfg {
     constexpr uint16_t CONN_INTERVAL_MIN = 24;   // 30 ms
     constexpr uint16_t CONN_INTERVAL_MAX = 32;   // 40 ms
 
+    constexpr uint16_t ADV_INTERVAL_MIN = 160;  // 100 ms  (160 × 0.625 ms)
+    constexpr uint16_t ADV_INTERVAL_MAX = 320;  // 200 ms  (320 × 0.625 ms)
+
     // ---- Device name ------------------------------------------
-    constexpr const char* DEVICE_NAME = "ArrhythmiaMonitor";
+    constexpr const char* DEVICE_NAME = "EcgMon";
 
     // ===========================================================
     // Wire Protocol

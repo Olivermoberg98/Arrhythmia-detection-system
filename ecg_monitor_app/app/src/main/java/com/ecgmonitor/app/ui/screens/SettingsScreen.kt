@@ -3,7 +3,6 @@ package com.ecgmonitor.app.ui.screens
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -25,7 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +46,12 @@ fun SettingsScreen(viewModel: SettingsViewModel, consentManager: ConsentManager)
     var permissionsGranted by remember { mutableStateOf(BlePermissions.allGranted(context)) }
     // True once user has tapped deny and "Don't ask again" — we must send them to system Settings
     var permanentlyDenied by remember { mutableStateOf(false) }
+    var connectingAddress by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(connectionState) {
+        if (connectionState !is ConnectionState.Connecting) {
+            connectingAddress = null
+        }
+    }
 
     // Re-check permissions every time the screen resumes (e.g. returning from system Settings)
     DisposableEffect(lifecycleOwner) {
@@ -202,9 +206,12 @@ fun SettingsScreen(viewModel: SettingsViewModel, consentManager: ConsentManager)
                                     discoveredDevices.forEach { device ->
                                         DeviceItem(
                                             device = device,
-                                            isConnected = (connectionState as? ConnectionState.Connected)?.device == device,
-                                            isConnecting = connectionState is ConnectionState.Connecting,
-                                            onClick = { viewModel.connectToDevice(device) }
+                                            isConnected  = (connectionState as? ConnectionState.Connected)?.device == device,
+                                            isConnecting = connectingAddress == device.address && connectionState is ConnectionState.Connecting,
+                                            onClick = {
+                                                connectingAddress = device.address   // ← record which one was tapped
+                                                viewModel.connectToDevice(device)
+                                            }
                                         )
                                     }
                                 }

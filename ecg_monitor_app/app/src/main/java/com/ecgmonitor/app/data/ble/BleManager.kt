@@ -148,6 +148,16 @@ class BleManager(private val context: Context) {
             currentDevice = device
             lastSeqNum = -1  // Reset sequence tracking on every fresh connection
             _connectionState.value = ConnectionState.Connected(device)
+            scope.launch {
+                peripheral!!.state.collect { peripheralState ->
+                    if (peripheralState is com.juul.kable.State.Disconnected) {
+                        Timber.w("Peripheral dropped connection")
+                        currentDevice = null
+                        lastSeqNum = -1
+                        _connectionState.value = ConnectionState.Disconnected
+                    }
+                }
+            }
 
             startStreamCollection()
             startInferenceCollection()
@@ -336,9 +346,9 @@ class BleManager(private val context: Context) {
 
     companion object {
         // Replace these with the actual UUIDs advertised by your ESP32 firmware
-        private const val ECG_SERVICE_UUID                = "12345678-1234-1234-1234-123456789012"
-        private const val ECG_STREAM_CHARACTERISTIC_UUID  = "12345678-1234-1234-1234-123456789013"
-        private const val ECG_INFERENCE_CHARACTERISTIC_UUID = "12345678-1234-1234-1234-123456789014"
+        private const val ECG_SERVICE_UUID                = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+        private const val ECG_STREAM_CHARACTERISTIC_UUID  = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+        private const val ECG_INFERENCE_CHARACTERISTIC_UUID = "beb5483f-36e1-4688-b7f5-ea07361b26a8"
 
         private const val STREAM_PACKET_SIZE    = 26
         private const val INFERENCE_PACKET_SIZE = 10

@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.ble.ConnectionState
-import com.ecgmonitor.app.data.models.DataSource
 import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorUiState

@@ -3,6 +3,7 @@ package com.ecgmonitor.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ecgmonitor.app.EcgMonitorApp
 import com.ecgmonitor.app.data.ble.BleManager
 import com.ecgmonitor.app.data.ble.ConnectionState
 import com.ecgmonitor.app.data.ble.EcgPacket
@@ -21,7 +22,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     private val database    = EcgDatabase.getDatabase(application)
     private val mitBihLoader = MitBihDataLoader(application)
     private val repository  = EcgRepository(database, mitBihLoader)
-    private val bleManager  = BleManager(application)
+    private val bleManager = (application as EcgMonitorApp).bleManager
 
     // -------------------------------------------------------------------------
     // Public state flows

@@ -3,16 +3,15 @@ package com.ecgmonitor.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ecgmonitor.app.EcgMonitorApp
 import com.ecgmonitor.app.data.ble.BleDevice
-import com.ecgmonitor.app.data.ble.BleManager
 import com.ecgmonitor.app.data.ble.ConnectionState
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    val bleManager = BleManager(application)
+    val bleManager = (application as EcgMonitorApp).bleManager
 
     val connectionState: StateFlow<ConnectionState> = bleManager.connectionState
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
