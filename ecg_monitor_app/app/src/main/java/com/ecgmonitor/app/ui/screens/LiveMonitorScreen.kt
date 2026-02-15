@@ -18,6 +18,7 @@ import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorUiState
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorViewModel
+import kotlinx.coroutines.delay
 
 /**
  * Updated Live Monitor Screen - BLE streaming with recording
@@ -36,9 +37,20 @@ fun LiveMonitorScreen(
     val heartRate by viewModel.heartRate.collectAsStateWithLifecycle()
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
 
+    // Ticker: recompose every second while recording so the duration display counts up.
+    var tickMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(isRecording) {
+        while (isRecording) {
+            delay(1_000L)
+            tickMs = System.currentTimeMillis()
+        }
+    }
+
     LaunchedEffect(uiState) {
         if (uiState is LiveMonitorUiState.RecordingSaved) {
             val sessionId = (uiState as LiveMonitorUiState.RecordingSaved).sessionId
+            // Reset state BEFORE navigating so pressing back doesn't re-trigger this effect.
+            viewModel.acknowledgeRecordingSaved()
             onRecordingSaved(sessionId)
         }
     }
@@ -83,7 +95,7 @@ fun LiveMonitorScreen(
                 isStreaming = connectionState is ConnectionState.Connected,
                 isRecording = isRecording,
                 recordingDuration = if (isRecording && currentSession != null) {
-                    (System.currentTimeMillis() - currentSession!!.startTime) / 1000
+                    (tickMs - currentSession!!.startTime) / 1000
                 } else 0
             )
 

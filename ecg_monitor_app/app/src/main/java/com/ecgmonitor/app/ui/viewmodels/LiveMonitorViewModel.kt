@@ -311,8 +311,11 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         // Reject flat signal (noise / leads-off transient)
         if (amplitude < MIN_SIGNAL_AMPLITUDE) return
 
-        val midpoint  = (windowMax + windowMin) / 2f
-        val threshold = midpoint + (amplitude * BEAT_THRESHOLD_FACTOR)
+        // Threshold = bottom of range + (amplitude × factor).
+        // This means "sample must be in the top (1-factor) portion of the observed range".
+        // The old formula used midpoint+factor×amplitude which placed the threshold
+        // ABOVE the R-peak for a symmetric signal, causing zero beats to be detected.
+        val threshold = windowMin + (amplitude * BEAT_THRESHOLD_FACTOR)
 
         if (reading.voltage <= threshold) return
 
@@ -417,6 +420,20 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     // -------------------------------------------------------------------------
 
     /**
+     * Called by the UI after it has successfully navigated to SessionDetailScreen in response
+     * to a [LiveMonitorUiState.RecordingSaved] event.  Resets uiState back to [Connected] or
+     * [Idle] so that pressing back from SessionDetailScreen does not re-trigger navigation.
+     */
+    fun acknowledgeRecordingSaved() {
+        val cs = connectionState.value
+        _uiState.value = if (cs is ConnectionState.Connected) {
+            LiveMonitorUiState.Connected(cs.device.name ?: "ESP32")
+        } else {
+            LiveMonitorUiState.Idle
+        }
+    }
+
+    /**
      * Wipe all live display state without touching an active recording.
      * Resets the beat-detector rolling state so threshold recalibrates cleanly.
      */
@@ -450,7 +467,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Number of samples kept in the live display buffer.
          * 3 000 samples ÷ 250 Hz = 12 seconds of waveform on screen.
          */
-        private const val VISIBLE_WINDOW_SAMPLES = 3_000
+        private const val VISIBLE_WINDOW_SAMPLES = 2_000
 
         /** Maximum inference/arrhythmia events shown in the event overlay. */
         private const val MAX_VISIBLE_EVENTS = 50
@@ -460,7 +477,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Threshold = midpoint + BEAT_THRESHOLD_FACTOR × peak-to-peak amplitude.
          */
         private const val ROLLING_WINDOW_SAMPLES  = 250      // 1 s @ 250 Hz
-        private const val BEAT_THRESHOLD_FACTOR   = 0.60f    // Tune if over/under-detecting
+        private const val BEAT_THRESHOLD_FACTOR   = 0.70f    // R-peak must be in top 30% of signal range; prevents T-wave triggers
         private const val MIN_BEAT_INTERVAL_MS    = 300L     // ~200 bpm max; rejects double-triggers
         private const val MAX_BEAT_HISTORY        = 10       // RR intervals averaged for HR
 

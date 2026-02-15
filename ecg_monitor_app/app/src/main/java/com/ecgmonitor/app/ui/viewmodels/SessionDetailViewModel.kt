@@ -114,7 +114,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
             val samplingRate = _sessionData.value?.session?.samplingRate ?: 250
             val delayMs = (1000L / (samplingRate * _playbackSpeed.value)).toLong()
             val batchSize = 10
-            val windowSize = 3000
+            val windowSize = 2000
 
             while (isPlaying && currentPlaybackIndex < allReadings.size) {
                 val endIndex = minOf(currentPlaybackIndex + batchSize, allReadings.size)
@@ -157,7 +157,7 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         _playbackProgress.value = progress
 
         // Show window around target index
-        val windowSize = 3000
+        val windowSize = 2000
         val startIndex = maxOf(0, targetIndex - windowSize / 2)
         val endIndex = minOf(allReadings.size, startIndex + windowSize)
         val readings = allReadings.subList(startIndex, endIndex)

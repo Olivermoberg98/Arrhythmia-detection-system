@@ -206,10 +206,15 @@ private fun MainAppNavigation(consentManager: ConsentManager) {
             composable("session_detail/{sessionId}") { backStackEntry ->
                 val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
                 val viewModel: SessionDetailViewModel = viewModel()
+                val historyViewModel: HistoryViewModel = viewModel()
                 SessionDetailScreen(
                     sessionId = sessionId,
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onDelete = { id ->
+                        historyViewModel.deleteSession(id)
+                        navController.popBackStack()
+                    }
                 )
             }
             composable("settings") {

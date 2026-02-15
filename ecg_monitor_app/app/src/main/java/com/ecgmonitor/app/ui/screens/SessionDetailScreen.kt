@@ -34,7 +34,8 @@ import java.util.*
 fun SessionDetailScreen(
     sessionId: String,
     viewModel: SessionDetailViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDelete: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val sessionData by viewModel.sessionData.collectAsStateWithLifecycle()
@@ -49,6 +50,7 @@ fun SessionDetailScreen(
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(sessionId) {
         viewModel.loadSession(sessionId)
@@ -77,6 +79,14 @@ fun SessionDetailScreen(
                     containerColor = MedicalDarkBlue
                 ),
                 actions = {
+                    // Delete recording
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete recording",
+                            tint = MedicalRed
+                        )
+                    }
                     IconButton(onClick = { showExportMenu = true }) {
                         Icon(
                             Icons.Default.Share,
@@ -89,6 +99,46 @@ fun SessionDetailScreen(
         },
         containerColor = MedicalDarkBackground
     ) { paddingValues ->
+
+        // Delete confirmation dialog
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                containerColor = MedicalCardBackground,
+                icon = {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MedicalRed)
+                },
+                title = {
+                    Text("Delete recording?", color = Color.White, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(
+                        "This will permanently delete the recording and all associated events. This cannot be undone.",
+                        color = MedicalTextSecondary,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showDeleteDialog = false
+                            onDelete(sessionId)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MedicalRed)
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = false },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MedicalTextSecondary)
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
 
         sessionData?.let { data ->
             Column(
