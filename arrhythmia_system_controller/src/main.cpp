@@ -14,63 +14,62 @@ static Inference      inference;
 static BLEManager     ble;
 
 // ============================================================
-// Shared state (inter-task, protected by a mutex)
+// Shared state
 // ============================================================
-static volatile uint8_t  s_bleSeqNum  = 0;
+static volatile uint8_t s_bleSeqNum = 0;
 
-// ML window buffer (allocated once, reused across inference calls)
 static float s_mlInputBuf[SamplingCfg::ML_WINDOW_SAMPLES];
 
 // ============================================================
-// Sensor Task  (Core 1 – sampling + signal processing)
+// Sensor Task  (Core 1 — sampling + signal processing)
 // ============================================================
 static void sensorTask(void* /*param*/) {
-    // Serial data-capture header (debug builds only)
 #if ENABLE_SERIAL_CAPTURE
     Serial.println("timestamp_ms,ecg_raw,ecg_filtered");
 #endif
 
-    // Accumulate ECG samples for the next BLE packet
     int16_t ecgBatch[SamplingCfg::BLE_ECG_BATCH_SIZE];
     size_t  batchCount = 0;
 
     for (;;) {
         const uint32_t now = millis();
 
-
-        // ---- ECG: drain available samples from circular buffer ----
         ecg.update();
 
         while (ecg.available() > 0) {
             int16_t raw = 0;
             if (ecg.popSamples(&raw, 1) == 0) break;
 
-            // Signal processing (filter + ML window)
-            float filtered = 0.0f;
-            bool  leadOff  = (raw == INT16_MIN);
+            // Lead-off detection.
+            const bool leadOff = !ecg.leadsOn() || (raw == INT16_MIN);
 
-            if (!leadOff) {
-                filtered = processor.processSample(raw);
-            } else {
-                processor.reset();   // Reset filters on lead-off event
+            if (leadOff) {
+                // Reset filter state so transient noise at reconnect
+                processor.reset();
             }
 
-            // ---- Serial capture (debug build) -----------------
+            int16_t sampleToSend;
+            if (leadOff) {
+                sampleToSend = 0;
+            } else {
+                float filtered = processor.processSample(raw);
+                sampleToSend   = static_cast<int16_t>(filtered);
+            }
+
 #if ENABLE_SERIAL_CAPTURE
-            Serial.printf("%lu,%d,%.2f\n", now, (int)raw, filtered);
+            Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
 #endif
 
-            // ---- Accumulate into BLE batch --------------------
-            if (!leadOff) {
-                ecgBatch[batchCount++] = static_cast<int16_t>(filtered);
-            }
+            ecgBatch[batchCount++] = sampleToSend;
 
-            // Once batch is full, notify BLE task via queue
+            // Send BLE packet once a full batch is ready.
             if (batchCount == SamplingCfg::BLE_ECG_BATCH_SIZE) {
                 BLECfg::DataPacket pkt = {};
                 pkt.seq_num      = s_bleSeqNum++;
                 pkt.timestamp_ms = now;
-                pkt.lead_off     = ecg.leadsOn() ? 0x00 : 0x03;
+                uint8_t loPlus  = digitalRead(Pins::ECG_LO_PLUS)  ? 0x01 : 0x00;
+                uint8_t loMinus = digitalRead(Pins::ECG_LO_MINUS) ? 0x02 : 0x00;
+                pkt.lead_off = loPlus | loMinus;  // 0x00 = both leads on
 
                 memcpy(pkt.ecg, ecgBatch,
                        sizeof(int16_t) * SamplingCfg::BLE_ECG_BATCH_SIZE);
@@ -101,7 +100,6 @@ static void sensorTask(void* /*param*/) {
             }
         }
 
-        // Yield briefly to avoid starving the idle task / BLE stack
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
@@ -115,22 +113,18 @@ void setup() {
     while (!Serial) { delay(10); }
 #endif
 
-    // ---- Initialise modules -----------------------------------
     if (!ecg.begin()) {
-        // ECG init failure – halt
         while (true) { delay(1000); }
     }
 
     if (!inference.begin()) {
-        // Inference init failure – continue without ML
+        // Continue without ML
     }
 
     if (!ble.begin()) {
-        // BLE failure – halt
         while (true) { delay(1000); }
     }
 
-    // ---- Launch sensor task on Core 1 -------------------------
     xTaskCreatePinnedToCore(
         sensorTask,
         "SensorTask",
@@ -140,11 +134,8 @@ void setup() {
         nullptr,
         /*core=*/     1
     );
-    // BLE stack runs on Core 0 (managed by NimBLE internals).
-    // No separate BLE task needed – NimBLE handles its own threading.
 }
 
 void loop() {
-    // Intentionally empty: all work is in FreeRTOS tasks.
     vTaskDelay(portMAX_DELAY);
 }

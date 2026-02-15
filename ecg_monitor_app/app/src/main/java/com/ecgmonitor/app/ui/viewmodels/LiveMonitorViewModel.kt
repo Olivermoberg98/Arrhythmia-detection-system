@@ -192,7 +192,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         // Skip sample processing while leads are disconnected.
         // The leadsOff StateFlow already notifies the UI separately.
-        if (packet.leadsOff) return
+        //if (packet.leadsOff) return
 
         // --- Expand 10 samples → EcgReading list ---
         // Each sample is separated by SAMPLE_INTERVAL_MS (4 ms at 250 Hz).

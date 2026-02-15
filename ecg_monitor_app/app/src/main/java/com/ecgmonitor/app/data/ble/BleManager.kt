@@ -2,6 +2,7 @@ package com.ecgmonitor.app.data.ble
 
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import com.juul.kable.AndroidPeripheral
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.characteristicOf
@@ -10,6 +11,7 @@ import com.juul.kable.peripheral
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +24,7 @@ import java.nio.ByteOrder
 class BleManager(private val context: Context) {
 
     // -------------------------------------------------------------------------
-    // State flows
+    // Public state flows
     // -------------------------------------------------------------------------
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -31,24 +33,15 @@ class BleManager(private val context: Context) {
     private val _discoveredDevices = MutableStateFlow<List<BleDevice>>(emptyList())
     val discoveredDevices: StateFlow<List<BleDevice>> = _discoveredDevices.asStateFlow()
 
-    /**
-     * Emits every decoded 26-byte stream packet.
-     * Each packet carries 10 ECG samples spaced 4 ms apart.
-     * Check [EcgPacket.droppedBefore] > 0 to insert a gap in your waveform.
-     */
     private val _ecgPacketFlow = MutableStateFlow<EcgPacket?>(null)
     val ecgPacketFlow: StateFlow<EcgPacket?> = _ecgPacketFlow.asStateFlow()
 
-    /**
-     * Emits a decoded 10-byte inference result whenever the ESP32 fires a
-     * classification. Only updated on actual inference events, not every packet.
-     */
     private val _inferenceResultFlow = MutableStateFlow<InferenceResult?>(null)
     val inferenceResultFlow: StateFlow<InferenceResult?> = _inferenceResultFlow.asStateFlow()
 
     /**
-     * True when byte 5 of the stream packet is 0x03 (leads off).
-     * Flips back to false once leads reconnect.
+     * True when any lead-off bit is set in byte 5 (Bit-0 = LO+, Bit-1 = LO-).
+     * The firmware uses a bitmask: 0x00 = both leads on, 0x01/0x02/0x03 = at least one off.
      */
     private val _leadOffState = MutableStateFlow(false)
     val leadOffState: StateFlow<Boolean> = _leadOffState.asStateFlow()
@@ -57,12 +50,12 @@ class BleManager(private val context: Context) {
     // Internal state
     // -------------------------------------------------------------------------
 
-    /** Last seen seq_num (0–255). -1 means we haven't received any packet yet. */
     private var lastSeqNum: Int = -1
-
     private var currentDevice: BleDevice? = null
     private var peripheral: Peripheral? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private var rawPacketCount = 0
 
     // -------------------------------------------------------------------------
     // Scanning
@@ -93,8 +86,8 @@ class BleManager(private val context: Context) {
                     if (name.isNullOrBlank()) return@collect
                     val device = BleDevice(
                         address = advertisement.address,
-                        name = advertisement.name,
-                        rssi = advertisement.rssi
+                        name    = advertisement.name,
+                        rssi    = advertisement.rssi
                     )
                     val current = _discoveredDevices.value.toMutableList()
                     if (current.none { it.address == device.address }) {
@@ -118,6 +111,22 @@ class BleManager(private val context: Context) {
     // Connection
     // -------------------------------------------------------------------------
 
+    /**
+     * Full connection sequence with correct Kable ordering and MTU negotiation:
+     *
+     *   1. Build peripheral object
+     *   2. Register observe() flows          ← MUST be before connect()
+     *   3. connect()                         ← CCCD writes happen here
+     *   4. Request MTU ≥ 29                  ← 26-byte packet + 3-byte ATT header
+     *   5. Launch collectors on the pre-registered flows
+     *
+     * Why MTU matters:
+     *   BLE default MTU = 23 bytes → 20-byte payload.
+     *   Our DataPacket is 26 bytes.  Without negotiation the BLE stack
+     *   silently truncates every notification to 20 bytes.  After successful
+     *   MTU negotiation (we request 512, ESP32 caps at 185, result = 182-byte
+     *   payload) all 26 bytes arrive intact.
+     */
     suspend fun connect(device: BleDevice) {
         if (!BlePermissions.allGranted(context)) {
             _connectionState.value = ConnectionState.Error("Bluetooth permissions not granted")
@@ -128,42 +137,129 @@ class BleManager(private val context: Context) {
             return
         }
 
-        Timber.i("Connecting to ${device.name}")
+        Timber.i("Connecting to ${device.name} (${device.address})")
         _connectionState.value = ConnectionState.Connecting
+        rawPacketCount = 0
 
         try {
-            peripheral = scope.peripheral(device.address) {
+            val p = scope.peripheral(device.address) {
                 logging { level = Logging.Level.Events }
             }
+            peripheral = p
 
-            peripheral?.connect()
+            // ----------------------------------------------------------------
+            // STEP 1 — Register observations BEFORE connect().
+            // ----------------------------------------------------------------
+            val streamCharacteristic = characteristicOf(
+                service        = ECG_SERVICE_UUID,
+                characteristic = ECG_STREAM_CHARACTERISTIC_UUID
+            )
+            val inferenceCharacteristic = characteristicOf(
+                service        = ECG_SERVICE_UUID,
+                characteristic = ECG_INFERENCE_CHARACTERISTIC_UUID
+            )
 
-            peripheral?.services?.forEach { service ->
+            Timber.d("Registering observations (before connect)…")
+            val streamFlow: Flow<ByteArray>    = p.observe(streamCharacteristic)
+            val inferenceFlow: Flow<ByteArray> = p.observe(inferenceCharacteristic)
+            Timber.d("Observations registered — calling connect()")
+
+            // ----------------------------------------------------------------
+            // STEP 2 — Connect (CCCD writes happen here).
+            // ----------------------------------------------------------------
+            p.connect()
+            Timber.i("GATT connected to ${device.name}")
+
+            // Log discovered services/characteristics for UUID verification
+            p.services?.forEach { service ->
                 Timber.d("Service: ${service.serviceUuid}")
                 service.characteristics.forEach { char ->
-                    Timber.d("  Char: ${char.characteristicUuid}")
+                    Timber.d("  Char: ${char.characteristicUuid}  props=${char.properties}")
                 }
             }
 
+            // ----------------------------------------------------------------
+            // STEP 3 — MTU negotiation.
+            //
+            // Our DataPacket is 26 bytes; default BLE payload is 20 bytes.
+            // We request 512 — the ESP32 (NimBLE setMTU(185)) will cap it
+            // at 185, giving a 182-byte payload.  Both ends log the result.
+            //
+            // Without this the BLE stack silently truncates every notification
+            // to 20 bytes and parseStreamPacket() rejects every packet with
+            // "too short: 20B (need 26)".
+            // ----------------------------------------------------------------
+            val negotiatedMtu = try {
+                (p as AndroidPeripheral).requestMtu(REQUESTED_MTU)
+            } catch (e: Exception) {
+                Timber.w("MTU negotiation threw: ${e.message} — will use default")
+                ATT_HEADER_BYTES + 20   // Conservative fallback = 23
+            }
+
+            val maxPayload = negotiatedMtu - ATT_HEADER_BYTES
+            Timber.i("MTU negotiated: ${negotiatedMtu}B  →  max payload: ${maxPayload}B")
+
+            if (maxPayload < STREAM_PACKET_SIZE) {
+                // Negotiation succeeded but result is still too small.
+                // This should not happen if the ESP32 BLEManager.cpp fix is in place.
+                Timber.e(
+                    "MTU too small after negotiation: ${maxPayload}B payload < " +
+                            "${STREAM_PACKET_SIZE}B DataPacket.  " +
+                            "Ensure NimBLEDevice::setMTU(185) is called before init() on the ESP32."
+                )
+                _connectionState.value = ConnectionState.Error(
+                    "MTU too small (${maxPayload}B). Flash updated ESP32 firmware."
+                )
+                p.disconnect()
+                return
+            }
+
+            // ----------------------------------------------------------------
+            // STEP 4 — Update state and monitor peripheral disconnects.
+            // ----------------------------------------------------------------
             currentDevice = device
-            lastSeqNum = -1  // Reset sequence tracking on every fresh connection
+            lastSeqNum    = -1
             _connectionState.value = ConnectionState.Connected(device)
+
             scope.launch {
-                peripheral!!.state.collect { peripheralState ->
+                p.state.collect { peripheralState ->
+                    Timber.d("Peripheral state → $peripheralState")
                     if (peripheralState is com.juul.kable.State.Disconnected) {
                         Timber.w("Peripheral dropped connection")
                         currentDevice = null
-                        lastSeqNum = -1
+                        lastSeqNum    = -1
                         _connectionState.value = ConnectionState.Disconnected
                     }
                 }
             }
 
-            startStreamCollection()
-            startInferenceCollection()
+            // ----------------------------------------------------------------
+            // STEP 5 — Collect from the pre-registered observation flows.
+            // ----------------------------------------------------------------
+            scope.launch {
+                Timber.d("ECG stream collector started — awaiting notifications…")
+                streamFlow
+                    .catch { cause ->
+                        Timber.e(cause, "ECG stream flow error: ${cause.message}")
+                        _connectionState.value =
+                            ConnectionState.Error("ECG stream failed: ${cause.message}")
+                    }
+                    .collect { bytes -> parseStreamPacket(bytes) }
+                Timber.w("ECG stream flow completed (peripheral disconnected?)")
+            }
+
+            scope.launch {
+                Timber.d("Inference collector started — awaiting notifications…")
+                inferenceFlow
+                    .catch { cause ->
+                        Timber.w("Inference flow error (non-fatal): ${cause.message}")
+                    }
+                    .collect { bytes -> parseInferencePacket(bytes) }
+                Timber.d("Inference flow completed")
+            }
 
         } catch (e: Exception) {
-            Timber.e(e, "Connection failed")
+            Timber.e(e, "Connection failed: ${e.message}")
             _connectionState.value = ConnectionState.Error("Connection failed: ${e.message}")
         }
     }
@@ -171,60 +267,9 @@ class BleManager(private val context: Context) {
     suspend fun disconnect() {
         peripheral?.disconnect()
         currentDevice = null
-        lastSeqNum = -1
+        lastSeqNum    = -1
         _connectionState.value = ConnectionState.Disconnected
         Timber.i("Disconnected")
-    }
-
-    // -------------------------------------------------------------------------
-    // Data collection
-    // -------------------------------------------------------------------------
-
-    /**
-     * Subscribes to the ECG stream characteristic and parses each 26-byte packet.
-     * Notifications arrive every ~40 ms, each carrying 10 samples at 4 ms spacing.
-     */
-    private fun startStreamCollection() {
-        scope.launch {
-            try {
-                val characteristic = characteristicOf(
-                    service = ECG_SERVICE_UUID,
-                    characteristic = ECG_STREAM_CHARACTERISTIC_UUID
-                )
-                peripheral?.observe(characteristic)
-                    ?.catch { cause ->
-                        Timber.e(cause, "ECG stream failed")
-                        _connectionState.value = ConnectionState.Error("ECG stream failed: ${cause.message}")
-                    }
-                    ?.collect { bytes -> parseStreamPacket(bytes) }
-            } catch (e: Exception) {
-                Timber.e(e, "Stream collection error")
-            }
-        }
-    }
-
-    /**
-     * Subscribes to the inference characteristic and parses each 10-byte result packet.
-     * Only notified when the ESP32 fires a classification — not every ECG packet.
-     */
-    private fun startInferenceCollection() {
-        scope.launch {
-            try {
-                val characteristic = characteristicOf(
-                    service = ECG_SERVICE_UUID,
-                    characteristic = ECG_INFERENCE_CHARACTERISTIC_UUID
-                )
-                peripheral?.observe(characteristic)
-                    ?.catch { cause ->
-                        Timber.e(cause, "Inference stream failed")
-                        // Non-fatal — inference is supplemental to the raw stream
-                        Timber.w("Inference notifications unavailable: ${cause.message}")
-                    }
-                    ?.collect { bytes -> parseInferencePacket(bytes) }
-            } catch (e: Exception) {
-                Timber.e(e, "Inference collection error")
-            }
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -232,96 +277,117 @@ class BleManager(private val context: Context) {
     // -------------------------------------------------------------------------
 
     /**
-     * Parses a 26-byte little-endian stream packet:
+     * Parses a 26-byte little-endian stream packet.
      *
-     * Byte 0      uint8    seq_num        rolling counter 0–255
-     * Bytes 1–4   uint32   timestamp_ms   ESP32 millis() when the batch started
-     * Byte 5      uint8    lead_off       0x00 = leads on, 0x03 = leads off
-     * Bytes 6–25  int16×10 ecg[10]        10 filtered, signed samples centred at 0
+     * Layout (matches config.h DataPacket):
+     *   [0]     uint8    seq_num
+     *   [1-4]   uint32   timestamp_ms  (LE)
+     *   [5]     uint8    lead_off      Bit-0=LO+, Bit-1=LO-.  0x00 = both leads on.
+     *   [6-25]  int16×10 ecg[10]       Filtered samples offset from ADC midpoint (2048)
      */
     private fun parseStreamPacket(bytes: ByteArray) {
+        rawPacketCount++
+        if (rawPacketCount <= 5) {
+            val hex = bytes.joinToString(" ") { "%02X".format(it) }
+            Timber.d("RAW stream packet #$rawPacketCount (${bytes.size}B): $hex")
+        } else if (rawPacketCount == 6) {
+            Timber.d("Raw-dump suppressed after packet #5 (data flowing normally)")
+        }
+
         if (bytes.size < STREAM_PACKET_SIZE) {
-            Timber.w("Stream packet too short: ${bytes.size} bytes (expected $STREAM_PACKET_SIZE)")
+            Timber.w(
+                "Stream packet too short: ${bytes.size}B (need $STREAM_PACKET_SIZE). " +
+                        "MTU not negotiated correctly — check ESP32 NimBLEDevice::setMTU(185) call."
+            )
             return
         }
 
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
 
-        // --- Header ---
-        val seqNum = buf.get().toInt() and 0xFF
+        val seqNum      = buf.get().toInt() and 0xFF
         val timestampMs = buf.int.toLong() and 0xFFFFFFFFL
         val leadOffByte = buf.get().toInt() and 0xFF
 
-        // --- Dropped-packet detection ---
+        // Dropped-packet detection (handles 255→0 rollover)
         val droppedBefore: Int = if (lastSeqNum == -1) {
-            0  // First packet after (re)connect — nothing to compare against
+            0
         } else {
             val expected = (lastSeqNum + 1) and 0xFF
             if (seqNum != expected) {
-                // Rolling subtraction handles the 255→0 wraparound correctly
                 val dropped = (seqNum - expected + 256) and 0xFF
-                Timber.w("Dropped $dropped packet(s): seq jumped $expected → $seqNum")
+                Timber.w("Dropped $dropped packet(s): expected seq $expected, got $seqNum")
                 dropped
-            } else {
-                0
-            }
+            } else 0
         }
         lastSeqNum = seqNum
 
-        // --- Lead-off detection ---
-        val leadsOff = leadOffByte == LEAD_OFF_VALUE
+        // Lead-off: bitmask — ANY bit set means at least one lead is off
+        val leadsOff = leadOffByte != 0x00
         if (_leadOffState.value != leadsOff) {
             _leadOffState.value = leadsOff
-            if (leadsOff) Timber.w("Leads off (0x${leadOffByte.toString(16)})")
-            else Timber.i("Leads reconnected")
+            if (leadsOff) {
+                val loPlus  = if (leadOffByte and 0x01 != 0) "LO+" else ""
+                val loMinus = if (leadOffByte and 0x02 != 0) "LO-" else ""
+                Timber.w("Leads off — $loPlus $loMinus (byte=0x${leadOffByte.toString(16)})")
+            } else {
+                Timber.i("Leads reconnected")
+            }
         }
 
-        // --- ECG samples ---
         val samples = ShortArray(ECG_SAMPLES_PER_PACKET) { buf.short }
 
+        if (rawPacketCount <= 5) {
+            Timber.d(
+                "  Parsed → seq=$seqNum  t=${timestampMs}ms" +
+                        "  leadOff=0x${leadOffByte.toString(16)}" +
+                        "  samples[0..2]=${samples[0]},${samples[1]},${samples[2]}"
+            )
+        }
+
         _ecgPacketFlow.value = EcgPacket(
-            seqNum = seqNum,
-            timestampMs = timestampMs,
-            leadsOff = leadsOff,
-            samples = samples,
+            seqNum        = seqNum,
+            timestampMs   = timestampMs,
+            leadsOff      = leadsOff,
+            samples       = samples,
             droppedBefore = droppedBefore
         )
     }
 
     /**
-     * Parses a 10-byte little-endian inference packet:
+     * Parses a 10-byte little-endian inference packet.
      *
-     * Byte 0      uint8    marker         always 0xFF
-     * Bytes 1–4   uint32   timestamp_ms   when inference ran
-     * Byte 5      uint8    class_id       0=Normal 1=AFib 2=Bradycardia 3=Tachycardia 4=Other
-     * Bytes 6–9   float32  confidence     softmax probability 0.0–1.0
+     * Layout (matches config.h InferencePacket):
+     *   [0]    uint8    marker        always 0xFF
+     *   [1-4]  uint32   timestamp_ms  (LE)
+     *   [5]    uint8    class_id      MLCfg::Classification enum
+     *   [6-9]  float32  confidence    softmax probability 0.0–1.0
      */
     private fun parseInferencePacket(bytes: ByteArray) {
         if (bytes.size < INFERENCE_PACKET_SIZE) {
-            Timber.w("Inference packet too short: ${bytes.size} bytes (expected $INFERENCE_PACKET_SIZE)")
+            Timber.w("Inference packet too short: ${bytes.size}B (need $INFERENCE_PACKET_SIZE)")
             return
         }
 
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-
+        val buf    = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val marker = buf.get().toInt() and 0xFF
+
         if (marker != INFERENCE_MARKER) {
             Timber.w("Unexpected inference marker: 0x${marker.toString(16)} (expected 0xFF)")
             return
         }
 
         val timestampMs = buf.int.toLong() and 0xFFFFFFFFL
-        val classId = buf.get().toInt() and 0xFF
-        val confidence = buf.float
+        val classId     = buf.get().toInt() and 0xFF
+        val confidence  = buf.float
+        val className   = CLASS_NAMES[classId] ?: "Unknown($classId)"
 
-        val className = CLASS_NAMES[classId] ?: "Unknown($classId)"
-        Timber.i("Inference → $className  conf=${String.format("%.1f%%", confidence * 100)}  t=${timestampMs}ms")
+        Timber.i("Inference → $className  ${"%.1f".format(confidence * 100)}%  t=${timestampMs}ms")
 
         _inferenceResultFlow.value = InferenceResult(
             timestampMs = timestampMs,
-            classId = classId,
-            className = className,
-            confidence = confidence
+            classId     = classId,
+            className   = className,
+            confidence  = confidence
         )
     }
 
@@ -345,18 +411,28 @@ class BleManager(private val context: Context) {
     // -------------------------------------------------------------------------
 
     companion object {
-        // Replace these with the actual UUIDs advertised by your ESP32 firmware
-        private const val ECG_SERVICE_UUID                = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-        private const val ECG_STREAM_CHARACTERISTIC_UUID  = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+        private const val ECG_SERVICE_UUID                 = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+        private const val ECG_STREAM_CHARACTERISTIC_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
         private const val ECG_INFERENCE_CHARACTERISTIC_UUID = "beb5483f-36e1-4688-b7f5-ea07361b26a8"
 
-        private const val STREAM_PACKET_SIZE    = 26
-        private const val INFERENCE_PACKET_SIZE = 10
+        private const val STREAM_PACKET_SIZE     = 26
+        private const val INFERENCE_PACKET_SIZE  = 10
         private const val ECG_SAMPLES_PER_PACKET = 10
-        private const val LEAD_OFF_VALUE        = 0x03
-        private const val INFERENCE_MARKER      = 0xFF
+        private const val INFERENCE_MARKER       = 0xFF
 
-        /** Maps ESP32 class_id → human-readable label */
+        /**
+         * ATT header overhead in bytes.  Every BLE notification uses 3 bytes of the
+         * negotiated MTU for the ATT protocol header, leaving (MTU - 3) for payload.
+         */
+        private const val ATT_HEADER_BYTES = 3
+
+        /**
+         * MTU we request from the peripheral.
+         * ESP32 (NimBLE setMTU(185)) will cap negotiation at 185 → 182-byte payload.
+         * Requesting 512 means we'll always accept whatever the peripheral offers.
+         */
+        private const val REQUESTED_MTU = 512
+
         val CLASS_NAMES = mapOf(
             0 to "Normal",
             1 to "AFib",
@@ -365,81 +441,54 @@ class BleManager(private val context: Context) {
             4 to "Other"
         )
 
-        /** Inter-sample interval in milliseconds (250 Hz → 4 ms) */
-        const val SAMPLE_INTERVAL_MS = 4L
-
-        /** Notification period in milliseconds */
+        const val SAMPLE_INTERVAL_MS       = 4L
         const val NOTIFICATION_INTERVAL_MS = 40L
     }
 }
 
 // =============================================================================
-// Sealed connection state — unchanged
+// Sealed states and data classes
 // =============================================================================
 
 sealed class ConnectionState {
     object Disconnected : ConnectionState()
-    object Scanning : ConnectionState()
-    object Connecting : ConnectionState()
+    object Scanning     : ConnectionState()
+    object Connecting   : ConnectionState()
     data class Connected(val device: BleDevice) : ConnectionState()
-    data class Error(val message: String) : ConnectionState()
+    data class Error(val message: String)       : ConnectionState()
 }
-
-// =============================================================================
-// Data classes
-// =============================================================================
 
 data class BleDevice(val address: String, val name: String?, val rssi: Int)
 
-/**
- * One decoded 26-byte stream packet from the ESP32.
- *
- * @param seqNum        Rolling 0–255 counter. Used to detect gaps.
- * @param timestampMs   ESP32 millis() at the start of this batch.
- * @param leadsOff      True if the ECG leads were disconnected during this batch.
- * @param samples       10 signed int16 ECG values, 4 ms apart, centred at 0.
- * @param droppedBefore Number of packets missing before this one.
- *                      Insert a gap in the waveform when this is > 0.
- */
 data class EcgPacket(
-    val seqNum: Int,
-    val timestampMs: Long,
-    val leadsOff: Boolean,
-    val samples: ShortArray,
+    val seqNum       : Int,
+    val timestampMs  : Long,
+    val leadsOff     : Boolean,
+    val samples      : ShortArray,
     val droppedBefore: Int
 ) {
-    // ShortArray doesn't get structural equality for free, so we override manually
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is EcgPacket) return false
-        return seqNum == other.seqNum &&
-                timestampMs == other.timestampMs &&
-                leadsOff == other.leadsOff &&
+        return seqNum        == other.seqNum        &&
+                timestampMs   == other.timestampMs   &&
+                leadsOff      == other.leadsOff      &&
                 samples.contentEquals(other.samples) &&
                 droppedBefore == other.droppedBefore
     }
-
     override fun hashCode(): Int {
-        var result = seqNum
-        result = 31 * result + timestampMs.hashCode()
-        result = 31 * result + leadsOff.hashCode()
-        result = 31 * result + samples.contentHashCode()
-        result = 31 * result + droppedBefore
-        return result
+        var r = seqNum
+        r = 31 * r + timestampMs.hashCode()
+        r = 31 * r + leadsOff.hashCode()
+        r = 31 * r + samples.contentHashCode()
+        r = 31 * r + droppedBefore
+        return r
     }
 }
 
-/**
- * One decoded 10-byte inference packet from the ESP32.
- *
- * @param timestampMs   ESP32 millis() when inference ran.
- * @param classId       Raw class ID from the model (0–4).
- * @param className     Human-readable label (e.g. "AFib").
- * @param confidence    Softmax probability in [0.0, 1.0].
- */
 data class InferenceResult(
     val timestampMs: Long,
-    val classId: Int,
-    val className: String,
-    val confidence: Float
+    val classId    : Int,
+    val className  : String,
+    val confidence : Float
 )

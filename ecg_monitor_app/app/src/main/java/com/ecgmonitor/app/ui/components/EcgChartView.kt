@@ -87,14 +87,15 @@ class EcgChartView @JvmOverloads constructor(
             textSize = 10f
             valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
-                    return "${(value / 1000f).format(1)}s" // Convert ms to seconds
+                    // value is a sampleIndex; divide by samplingRate to get seconds
+                    return "${(value / samplingRate).format(1)}s"
                 }
             }
             setDrawAxisLine(true)
             axisLineColor = GRID_COLOR
         }
 
-        // Y Axis (Voltage in mV)
+        // Y Axis (Voltage — raw ADC units; auto-scaled to actual signal range)
         axisLeft.apply {
             setDrawGridLines(true)
             gridColor = GRID_COLOR
@@ -103,14 +104,16 @@ class EcgChartView @JvmOverloads constructor(
             textSize = 10f
             valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
-                    return "${value.format(2)} mV"
+                    return value.format(0)
                 }
             }
             setDrawAxisLine(true)
             axisLineColor = GRID_COLOR
-            // Set range for ECG (typically -2 to +2 mV)
-            axisMinimum = -1.5f
-            axisMaximum = 2.5f
+            // Let MPAndroidChart auto-scale to the actual signal range.
+            // The raw int16 samples are NOT converted to mV here; the axis
+            // shows ADC counts. Pinch-zoom is enabled so the user can zoom
+            // in/out on both axes freely.
+            isAutoScaleMinMaxEnabled = true
         }
 
         // Disable right axis
@@ -142,17 +145,20 @@ class EcgChartView @JvmOverloads constructor(
             entries.clear()
         }
 
-        // Convert readings to chart entries
+        // Convert readings to chart entries.
+        // X = sampleIndex (integer counter 0, 1, 2…) — avoids Float precision loss
+        // that happens when using absolute millisecond timestamps (~1.2 billion),
+        // which caused consecutive 4 ms-apart entries to collapse to the same pixel.
         val newEntries = readings.map { reading ->
-            Entry(reading.timestamp.toFloat(), reading.voltage)
+            Entry(reading.sampleIndex.toFloat(), reading.voltage)
         }
 
         entries.addAll(newEntries)
 
-        // Limit visible window for performance
+        // Limit visible window: keep the most recent (VISIBLE_WINDOW_SECONDS × samplingRate) samples.
+        // Because X is now sampleIndex, the window size in samples is exact.
         val maxEntries = (VISIBLE_WINDOW_SECONDS * samplingRate).toInt()
         if (entries.size > maxEntries) {
-            // Remove oldest entries
             val toRemove = entries.size - maxEntries
             repeat(toRemove) { entries.removeAt(0) }
         }

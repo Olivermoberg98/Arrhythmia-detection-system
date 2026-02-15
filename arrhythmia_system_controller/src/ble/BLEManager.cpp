@@ -5,6 +5,7 @@
 BLEManager::BLEManager() {}
 
 bool BLEManager::begin() {
+    NimBLEDevice::setMTU(185);
     NimBLEDevice::init(BLECfg::DEVICE_NAME);
     NimBLEDevice::setPower(9);   // Max TX power (dBm)
 
