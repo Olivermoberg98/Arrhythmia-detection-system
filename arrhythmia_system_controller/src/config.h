@@ -20,34 +20,30 @@ namespace SamplingCfg {
     // AD8232 analogue output → ESP32 ADC sampled by hardware timer.
     constexpr uint32_t ECG_SAMPLE_RATE_HZ    = 250;   // Hz
     constexpr uint32_t ECG_TIMER_PERIOD_US   = 1000000 / ECG_SAMPLE_RATE_HZ; // 4000 µs
+    constexpr int      ADC_MIDPOINT          = 2048;
 
-    // ADC resolution on ESP32 is 12-bit (0–4095).
-    // Centre (~1.65 V) is ~2048.  We store as int16_t offset from 2048.
-    constexpr int ADC_MIDPOINT = 2048;
+    // BLE stream batching — UNCHANGED
+    constexpr size_t BLE_ECG_BATCH_SIZE  = 10;
+    constexpr size_t ECG_BLE_BUFFER_SIZE = 50;
 
-    // PPG -------------------------------------------------------
-    // MAX30102 internal sampling rate (register value 100 sps).
-    constexpr uint32_t PPG_SAMPLE_RATE_HZ    = 100;
+    // ── Beat segmentation ──────────────────────────────────────
+    // 187 samples before R-peak + 63 after = 250 samples total @ 250 Hz.
+    constexpr size_t BEAT_PRE_SAMPLES    = 187;
+    constexpr size_t BEAT_POST_SAMPLES   = 63;
+    constexpr size_t BEAT_WINDOW_SAMPLES = BEAT_PRE_SAMPLES + BEAT_POST_SAMPLES; // 250
 
-    // ---- Buffer sizes -----------------------------------------
-    // BLE batch: 10 ECG samples @ 250 Hz = 40 ms per packet.
-    constexpr size_t BLE_ECG_BATCH_SIZE      = 10;
+    // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
+    constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
 
-    // Circular buffer for ECG → BLE path:  200 ms headroom.
-    constexpr size_t ECG_BLE_BUFFER_SIZE     = 50;
+    // Aliases kept for SignalProcessor / main.cpp compatibility.
+    constexpr size_t ML_WINDOW_SAMPLES  = BEAT_WINDOW_SAMPLES; // 250
+    constexpr size_t ML_STRIDE_SAMPLES  = BEAT_WINDOW_SAMPLES; // fire on each beat
 
-    // ML sliding window: 5 seconds of ECG at 250 Hz.
-    constexpr size_t ML_WINDOW_SAMPLES       = 1250;
-
-    // ML inference stride: 50 % overlap → re-run every 2.5 s.
-    constexpr size_t ML_STRIDE_SAMPLES       = 625;
-
-    // Serial data-capture ring buffer (debug build only).
-    constexpr size_t SERIAL_BUFFER_SIZE      = 512;
+    constexpr size_t SERIAL_BUFFER_SIZE = 512;
 }
 
 // ============================================================
-// Signal Processing
+// Signal Processing & R-peak detection
 // ============================================================
 namespace FilterCfg {
     // All coefficients are for fs = 250 Hz, direct-form II biquads.
@@ -66,33 +62,48 @@ namespace FilterCfg {
     constexpr float NOTCH_B[3] = { 1.0f,    -0.61800f, 1.0f     };
     constexpr float NOTCH_A[2] = {-0.59484f,  0.92598f };
 
-    // Enable / disable individual stages
     constexpr bool ENABLE_HP    = true;
     constexpr bool ENABLE_LP    = true;
-    constexpr bool ENABLE_NOTCH = true;   // set false for 60 Hz regions
+    constexpr bool ENABLE_NOTCH = true;
+
+    // Pan-Tompkins R-peak detector
+    constexpr uint32_t REFRACTORY_SAMPLES = 50;   // 200 ms @ 250 Hz
+    constexpr float    PT_THRESHOLD_INIT  = 500.0f;
+    constexpr float    PT_THRESHOLD_DECAY = 0.995f;
 }
 
 // ============================================================
-// ML / Inference
+// ML / Inference — UPDATED for dual-input 3-class model
 // ============================================================
 namespace MLCfg {
-    // Input normalisation: z-score over the window.
-    // Change to match how your training data was normalised.
-    constexpr float INPUT_MEAN  = 0.0f;
-    constexpr float INPUT_STD   = 1.0f;
 
-    // Output classes (must match your model's output layer)
+    // Output classes — 0=Normal, 1=SVEB, 2=VEB
     enum Classification : uint8_t {
-        NORMAL      = 0,
-        AFIB        = 1,
-        BRADYCARDIA = 2,
-        TACHYCARDIA = 3,
-        OTHER       = 4
+        NORMAL           = 0,
+        SUPRAVENTRICULAR = 1,
+        VENTRICULAR      = 2,
     };
-    constexpr uint8_t NUM_CLASSES = 5;
+    constexpr uint8_t NUM_CLASSES = 3;
 
-    // Confidence threshold – below this → report UNKNOWN
-    constexpr float CONFIDENCE_THRESHOLD = 0.70f;
+    constexpr const char* CLASS_NAMES[NUM_CLASSES] = {
+        "Normal",
+        "Supraventricular",
+        "Ventricular",
+    };
+
+    // Per-class thresholds — tuned on validation set (macro F1 = 0.772).
+    // Real values are baked into model_config.h by extract_constants.py;
+    // these defaults compile when model_config.h is not yet generated.
+    constexpr float DEFAULT_THRESHOLDS[NUM_CLASSES] = {
+        0.234f,  // Normal
+        0.050f,  // Supraventricular
+        0.050f,  // Ventricular
+    };
+
+    // RR features fed to model input 1: [pre_rr_norm, post_rr_norm, ratio_rr]
+    constexpr uint8_t N_RR_FEATURES   = 3;
+    constexpr size_t  RR_MEAN_WINDOW  = 8;    // beats used for running mean RR
+    constexpr float   RR_CLAMP_SIGMA  = 4.0f; // outlier clamp before normalisation
 }
 
 // ============================================================
@@ -140,13 +151,9 @@ namespace BLECfg {
     // Effective ECG rate on the app side: 10 samples / 40 ms = 250 Hz.
     // Render each sample 4 ms apart for correct waveform scaling.
     //
-    // INFERENCE CHARACTERISTIC  –  InferencePacket  (10 bytes)
-    // ┌─────────┬──────────────────────┬──────────────────────────────────────────┐
-    // │   0     │ marker    (uint8)    │ Always 0xFF                              │
-    // │  1-4    │ timestamp (uint32LE) │ millis() when inference was run          │
-    // │   5     │ class_id  (uint8)    │ MLCfg::Classification enum value         │
-    // │  6-9    │ confidence(float32LE)│ Softmax probability of class_id          │
-    // └─────────┴──────────────────────┴──────────────────────────────────────────┘
+    // class_id meaning (InferencePacket byte 5):
+    //   Was: 0=Normal, 1=AFib, 2=Brady, 3=Tachy, 4=Other
+    //   Now: 0=Normal, 1=Supraventricular (SVEB), 2=Ventricular (VEB)
 
     #pragma pack(push, 1)
     struct DataPacket {
@@ -170,5 +177,4 @@ namespace BLECfg {
 // ============================================================
 namespace SerialCfg {
     constexpr uint32_t BAUD_RATE = 921600;
-    // CSV header: timestamp_ms,ecg_raw,ecg_filtered
 }

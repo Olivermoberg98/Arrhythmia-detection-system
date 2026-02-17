@@ -18,7 +18,10 @@ static BLEManager     ble;
 // ============================================================
 static volatile uint8_t s_bleSeqNum = 0;
 
-static float s_mlInputBuf[SamplingCfg::ML_WINDOW_SAMPLES];
+// Beat + RR buffers — filled by SignalProcessor, consumed by Inference.
+// Sized at compile time from config.h constants.
+static float s_beatBuf[SamplingCfg::BEAT_WINDOW_SAMPLES];
+static float s_rrBuf[MLCfg::N_RR_FEATURES];
 
 // ============================================================
 // Sensor Task  (Core 1 — sampling + signal processing)
@@ -44,7 +47,8 @@ static void sensorTask(void* /*param*/) {
             const bool leadOff = !ecg.leadsOn() || (raw == INT16_MIN);
 
             if (leadOff) {
-                // Reset filter state so transient noise at reconnect
+                // Reset filter + detector state on lead disconnect.
+                // The R-peak detector will re-adapt within a few beats.
                 processor.reset();
             }
 
@@ -77,14 +81,19 @@ static void sensorTask(void* /*param*/) {
                 ble.sendStream(pkt);
                 batchCount = 0;
             }
-        }
 
-        // ---- ML inference (triggered by stride counter) -------
-        if (processor.isWindowReady()) {
-            processor.getMLWindow(s_mlInputBuf);
-            if (inference.runInference(s_mlInputBuf)) {
-                InferenceResult r = inference.getResult();
-                if (r.valid) {
+            // -- ML inference (triggered once per detected beat) -----------
+            // isBeatReady() is only true for exactly one processSample()
+            // call after a complete 250-sample beat window is captured.
+            if (!leadOff && processor.isBeatReady()) {
+                processor.getBeat(s_beatBuf);       // raw filtered ECG window
+                processor.getRRFeatures(s_rrBuf);   // [pre_rr_norm, post_rr_norm, ratio_rr]
+
+                if (inference.runInference(s_beatBuf, s_rrBuf)) {
+                    InferenceResult r = inference.getResult();
+
+                    // Always send the BLE inference packet so the app can
+                    // display all beats; valid=false ones can be shown dimmed.
                     BLECfg::InferencePacket ipkt = {};
                     ipkt.marker       = 0xFF;
                     ipkt.timestamp_ms = millis();
@@ -93,8 +102,10 @@ static void sensorTask(void* /*param*/) {
                     ble.sendInference(ipkt);
 
 #if ENABLE_SERIAL_CAPTURE
-                    Serial.printf("[INFER] class=%u conf=%.2f\n",
-                                  ipkt.class_id, ipkt.confidence);
+                    Serial.printf("[BEAT] class=%u conf=%.2f valid=%d"
+                                  " pre_rr=%.3f post_rr=%.3f ratio=%.3f\n",
+                                  ipkt.class_id, ipkt.confidence, (int)r.valid,
+                                  s_rrBuf[0], s_rrBuf[1], s_rrBuf[2]);
 #endif
                 }
             }
@@ -118,7 +129,8 @@ void setup() {
     }
 
     if (!inference.begin()) {
-        // Continue without ML
+        // Model failed to load — continue without ML.
+        // BLE stream will still work; inference packets simply won't be sent.
     }
 
     if (!ble.begin()) {

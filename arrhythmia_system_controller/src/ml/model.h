@@ -1,63 +1,77 @@
 #pragma once
-#include <stdint.h>
-#include <stddef.h>
-
 /**
  * @file  model.h
- * @brief TFLite Micro model flat-buffer array.
+ * @brief TFLite Micro model entry point for the dual-input ECG classifier.
  *
- * ╔═══════════════════════════════════════════════════════════════════╗
- * ║  REPLACE THIS FILE WITH YOUR TRAINED MODEL                        ║
- * ╚═══════════════════════════════════════════════════════════════════╝
+ * This file ties together the two auto-generated headers produced by
+ * extract_constants.py:
  *
- * STEP 1: Train your model in Python and save as .tflite
- * -------------------------------------------------------
- * import tensorflow as tf
- * 
- * # After training your model:
- * converter = tf.lite.TFLiteConverter.from_keras_model(model)
- * converter.optimizations = [tf.lite.Optimize.DEFAULT]  # int8 quantization
- * tflite_model = converter.convert()
- * 
- * with open("arrhythmia_model.tflite", "wb") as f:
- *     f.write(tflite_model)
+ *   model_data.h   — the g_model[] flat-buffer C array (from xxd / Python)
+ *   model_config.h — normalisation constants and per-class thresholds
  *
- * STEP 2: Convert to C array with xxd
- * ------------------------------------
- * From command line:
- *   xxd -i arrhythmia_model.tflite > src/ml/model.h
+ * ═══════════════════════════════════════════════════════════════════════
+ *  HOW TO REGENERATE AFTER RETRAINING
+ * ═══════════════════════════════════════════════════════════════════════
  *
- * OR with Python:
- *   python3 -c "
- *   data = open('arrhythmia_model.tflite','rb').read()
- *   print('#pragma once')
- *   print('#include <stdint.h>')
- *   print('alignas(8) const unsigned char g_model[] = {')
- *   print(','.join(hex(b) for b in data))
- *   print('};')
- *   print(f'const unsigned int g_model_len = {len(data)};')
- *   " > src/ml/model.h
+ *  STEP 1 — Convert .keras → INT8 TFLite
+ *  ─────────────────────────────────────
+ *  python tools/convert_model.py \
+ *      --model   models/trained/model_XXXXXX.keras \
+ *      --meta    data/processed/metadata.pkl \
+ *      --ecg     data/processed/X_ecg_val.npy \
+ *      --rr      data/processed/X_rr_val.npy \
+ *      --out     src/ml/arrhythmia_model.tflite
  *
- * STEP 3: Verify expected I/O shapes in config.h match your model
- * ----------------------------------------------------------------
- * Input:  [1, ML_WINDOW_SAMPLES] float32  (1250 samples = 5 seconds @ 250 Hz)
- * Output: [1, NUM_CLASSES] float32         (5 classes: Normal, AFib, Brady, Tachy, Other)
+ *  STEP 2+3 — C-array + constants
+ *  ────────────────────────────────
+ *  python tools/extract_constants.py \
+ *      --tflite      src/ml/arrhythmia_model.tflite \
+ *      --meta        data/processed/metadata.pkl \
+ *      --ecg_scaler  data/processed/ecg_scaler.pkl \
+ *      --rr_scaler   data/processed/rr_scaler.pkl \
+ *      --results     models/trained/results_XXXXXX.pkl \
+ *      --out_data    src/ml/model_data.h \
+ *      --out_cfg     src/ml/model_config.h
+ *
+ *  The two generated files are #included below — no other changes needed.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ *  MODEL I/O CONTRACT (must match the trained model)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  Input 0 — ECG beat window
+ *    Shape : [1, BEAT_LENGTH]  = [1, 250]
+ *    Type  : float32
+ *    Range : z-score normalised using ecg_scaler (element-wise)
+ *
+ *  Input 1 — RR interval features
+ *    Shape : [1, N_RR_FEATURES] = [1, 3]
+ *    Type  : float32
+ *    Content (in order):
+ *      [0] pre_rr_norm  — pre-beat RR interval  / mean_rr
+ *      [1] post_rr_norm — post-beat RR interval / mean_rr
+ *      [2] ratio_rr     — pre_rr / post_rr
+ *    Range : z-score normalised using rr_scaler (per-feature)
+ *
+ *  Output — Class probabilities
+ *    Shape : [1, NUM_CLASSES] = [1, 3]
+ *    Type  : float32  (softmax)
+ *    Index : 0=Normal, 1=SVEB, 2=VEB
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ *  TENSOR ARENA SIZING GUIDANCE
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  The tensor arena must be large enough for all intermediate activations.
+ *  Start with TFLITE_TENSOR_ARENA_SIZE = 60000 (already in platformio.ini).
+ *  If AllocateTensors() returns kTfLiteError, increase by 10 kB increments.
+ *  On success, call interpreter->arena_used_bytes() and trim to that value
+ *  + ~4 kB margin.
+ *
+ *  Current setting in platformio.ini: -DTFLITE_TENSOR_ARENA_SIZE=60000
  */
 
-// Declarations — replace the body below with xxd output
-alignas(8) extern const unsigned char g_model[];
-extern const unsigned int             g_model_len;
-
-// ╔═══════════════════════════════════════════════════════════════════╗
-// ║  TEMPORARY STUB — DELETE THIS BLOCK AFTER ADDING YOUR MODEL       ║
-// ╚═══════════════════════════════════════════════════════════════════╝
-// This minimal stub allows compilation without a real model.
-// Inference will always return false until you replace this with a real .tflite.
-
-alignas(8) const unsigned char g_model[] = {
-    0x1c, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33,  // Minimal valid TFLite header
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0e, 0x00,
-    0x18, 0x00, 0x04, 0x00, 0x08, 0x00, 0x0c, 0x00,
-    0x10, 0x00, 0x14, 0x00, 0x0e, 0x00, 0x00, 0x00
-};
-const unsigned int g_model_len = 32;
+// ── Auto-generated outputs from extract_constants.py ────────────────────────
+// Both files must exist before building.  Run extract_constants.py first.
+#include "model_data.h"    // g_model[], g_model_len
+#include "model_config.h"  // namespace ModelCfg — all constants + thresholds
