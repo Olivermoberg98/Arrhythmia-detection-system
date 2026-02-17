@@ -41,6 +41,7 @@ ml_pipeline/data/personal/*
 !ml_pipeline/data/processed/.gitkeep
 !ml_pipeline/data/personal/.gitkeep
 ml_pipeline/models/trained/*
+ml_pipeline/models/logs/*
 !ml_pipeline/models/trained/.gitkeep
 *.h5
 *.hdf5
@@ -85,3 +86,4 @@ htmlcov/
 
 # App
 ecg_monitor_app/.gradle/8.13/
+ecg_monitor_app/app/google-services.json
