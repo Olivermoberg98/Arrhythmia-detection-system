@@ -23,7 +23,7 @@ import timber.log.Timber
 class ConsentManager(context: Context) {
 
     companion object {
-        const val CONSENT_VERSION = "1.0"
+        const val CONSENT_VERSION = "2.0"
     }
 
     private val db = EcgDatabase.getDatabase(context)

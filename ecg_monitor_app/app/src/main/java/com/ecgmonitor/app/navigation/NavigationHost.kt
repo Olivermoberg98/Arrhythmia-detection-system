@@ -27,6 +27,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ecgmonitor.app.data.consent.ConsentManager
+import com.ecgmonitor.app.data.database.EcgDatabase
+import com.ecgmonitor.app.data.firebase.FirebaseRepository
+import com.ecgmonitor.app.data.firebase.SyncManager
 import com.ecgmonitor.app.ui.screens.*
 import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
 import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
@@ -40,6 +43,14 @@ import kotlinx.coroutines.launch
 fun NavigationHost() {
     val context = LocalContext.current
     val consentManager = remember { ConsentManager(context) }
+    val firebaseRepository = remember { FirebaseRepository() }
+    val syncManager = remember {
+        SyncManager(
+            database = EcgDatabase.getDatabase(context),
+            firebaseRepository = firebaseRepository,
+            consentManager = consentManager
+        )
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // Tri-state: null = still checking, true = consented, false = needs consent
@@ -49,6 +60,7 @@ fun NavigationHost() {
         consentGranted = consentManager.hasValidConsent()
         if (consentGranted == true) {
             consentManager.log(com.ecgmonitor.app.data.database.entities.AuditAction.APP_OPENED)
+            syncManager.initialise()
         }
     }
 
@@ -113,14 +125,22 @@ fun NavigationHost() {
             }
         }
         true -> {
-            MainAppNavigation(consentManager = consentManager)
+            MainAppNavigation(
+                consentManager = consentManager,
+                firebaseRepository = firebaseRepository,
+                syncManager = syncManager
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainAppNavigation(consentManager: ConsentManager) {
+private fun MainAppNavigation(
+    consentManager: ConsentManager,
+    firebaseRepository: FirebaseRepository,
+    syncManager: SyncManager
+) {
     val navController = rememberNavController()
     val coroutineScope = rememberCoroutineScope()
 
@@ -221,7 +241,9 @@ private fun MainAppNavigation(consentManager: ConsentManager) {
                 val viewModel: SettingsViewModel = viewModel()
                 SettingsScreen(
                     viewModel = viewModel,
-                    consentManager = consentManager
+                    consentManager = consentManager,
+                    firebaseRepository = firebaseRepository,
+                    syncManager = syncManager
                 )
             }
         }

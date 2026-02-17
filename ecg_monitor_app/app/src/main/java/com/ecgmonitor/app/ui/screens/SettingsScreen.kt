@@ -31,13 +31,20 @@ import com.ecgmonitor.app.data.ble.BleDevice
 import com.ecgmonitor.app.data.ble.BlePermissions
 import com.ecgmonitor.app.data.ble.ConnectionState
 import com.ecgmonitor.app.data.consent.ConsentManager
+import com.ecgmonitor.app.data.firebase.FirebaseRepository
+import com.ecgmonitor.app.data.firebase.SyncManager
 import com.ecgmonitor.app.ui.theme.*
 import com.ecgmonitor.app.ui.viewmodels.SettingsViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, consentManager: ConsentManager) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    consentManager: ConsentManager,
+    firebaseRepository: FirebaseRepository,
+    syncManager: SyncManager
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -236,9 +243,9 @@ fun SettingsScreen(viewModel: SettingsViewModel, consentManager: ConsentManager)
                     }
                 }
             }
-
+            item { CloudSyncCard(firebaseRepository = firebaseRepository) }
             item {
-                DataPrivacyCard(consentManager = consentManager)
+                DataPrivacyCard(consentManager = consentManager, syncManager = syncManager)
             }
         }
     }
@@ -379,7 +386,7 @@ private fun isBluetoothEnabled(context: Context): Boolean {
 }
 
 @Composable
-fun DataPrivacyCard(consentManager: ConsentManager) {
+fun DataPrivacyCard(consentManager: ConsentManager, syncManager: SyncManager) {
     val coroutineScope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showWithdrawConfirm by remember { mutableStateOf(false) }
@@ -443,7 +450,7 @@ fun DataPrivacyCard(consentManager: ConsentManager) {
                     onClick = {
                         showDeleteConfirm = false
                         coroutineScope.launch {
-                            consentManager.deleteAllUserData()
+                            syncManager.deleteEverywhere()
                             actionComplete = "All recordings deleted"
                         }
                     },
@@ -473,7 +480,7 @@ fun DataPrivacyCard(consentManager: ConsentManager) {
                     onClick = {
                         showWithdrawConfirm = false
                         coroutineScope.launch {
-                            consentManager.deleteAllUserData()
+                            syncManager.deleteEverywhere()
                             consentManager.recordConsent(granted = false)
                             actionComplete = "Consent withdrawn. Please restart the app."
                         }

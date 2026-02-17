@@ -12,6 +12,7 @@ import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
 import com.ecgmonitor.app.data.models.*
 import com.ecgmonitor.app.data.repository.EcgRepository
+import com.ecgmonitor.app.data.firebase.SyncManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -23,6 +24,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     private val mitBihLoader = MitBihDataLoader(application)
     private val repository  = EcgRepository(database, mitBihLoader)
     private val bleManager = (application as EcgMonitorApp).bleManager
+    private val syncManager = (application as EcgMonitorApp).syncManager
 
     // -------------------------------------------------------------------------
     // Public state flows
@@ -449,6 +451,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                         sessionName     = null,
                         heartRateStats  = heartRateStats
                     )
+                    viewModelScope.launch {
+                        syncManager.syncSession(sessionId)
+                    }
                     Timber.i("Saved session $sessionId — ${recordingBuffer.size} samples, ${duration}s, HR avg=${heartRateStats?.avg}")
                     _uiState.value = LiveMonitorUiState.RecordingSaved(sessionId)
                 } catch (e: Exception) {
