@@ -193,10 +193,10 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
         return when (_eventFilter.value) {
             EventFilter.ALL -> _allEvents.value
             EventFilter.PVC_ONLY -> _allEvents.value.filter {
-                it.type == ArrhythmiaType.PREMATURE_VENTRICULAR
+                it.type == ArrhythmiaType.VENTRICULAR
             }
             EventFilter.AFIB_ONLY -> _allEvents.value.filter {
-                it.type == ArrhythmiaType.ATRIAL_FIBRILLATION
+                it.type == ArrhythmiaType.SUPRAVENTRICULAR
             }
             EventFilter.ABNORMAL_ONLY -> _allEvents.value.filter {
                 it.type != ArrhythmiaType.NORMAL

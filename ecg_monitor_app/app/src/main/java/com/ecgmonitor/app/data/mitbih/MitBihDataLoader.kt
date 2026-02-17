@@ -96,10 +96,9 @@ class MitBihDataLoader(private val context: Context) {
     private fun mapAnnotationType(type: String): ArrhythmiaType {
         return when (type.uppercase()) {
             "N" -> ArrhythmiaType.NORMAL
-            "V", "PVC" -> ArrhythmiaType.PREMATURE_VENTRICULAR
-            "A", "AFIB" -> ArrhythmiaType.ATRIAL_FIBRILLATION
-            "VTACH" -> ArrhythmiaType.VENTRICULAR_TACHYCARDIA
-            else -> ArrhythmiaType.UNKNOWN
+            "V", "PVC" -> ArrhythmiaType.VENTRICULAR
+            "A", "AFIB" -> ArrhythmiaType.SUPRAVENTRICULAR
+            else -> ArrhythmiaType.NORMAL
         }
     }
 }

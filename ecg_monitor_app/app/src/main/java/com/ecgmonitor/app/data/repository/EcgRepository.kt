@@ -241,11 +241,8 @@ class EcgRepository(
 
         // Count arrhythmia types
         val normalBeats = events.count { it.type == ArrhythmiaType.NORMAL }
-        val pvcCount = events.count { it.type == ArrhythmiaType.PREMATURE_VENTRICULAR }
-        val afibCount = events.count {
-            it.type == ArrhythmiaType.ATRIAL_FIBRILLATION ||
-                    it.type == ArrhythmiaType.VENTRICULAR_TACHYCARDIA
-        }
+        val pvcCount = events.count { it.type == ArrhythmiaType.VENTRICULAR }
+        val afibCount = events.count { it.type == ArrhythmiaType.SUPRAVENTRICULAR }
         val otherCount = totalBeats - normalBeats - pvcCount - afibCount
 
         return SessionStatistics(

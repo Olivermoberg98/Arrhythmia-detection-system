@@ -435,10 +435,8 @@ class BleManager(private val context: Context) {
 
         val CLASS_NAMES = mapOf(
             0 to "Normal",
-            1 to "AFib",
-            2 to "Bradycardia",
-            3 to "Tachycardia",
-            4 to "Other"
+            1 to "Supraventricular",
+            2 to "Ventricular"
         )
 
         const val SAMPLE_INTERVAL_MS       = 4L

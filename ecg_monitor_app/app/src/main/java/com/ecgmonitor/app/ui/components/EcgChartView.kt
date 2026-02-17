@@ -38,7 +38,6 @@ class EcgChartView @JvmOverloads constructor(
         private const val MARKER_NORMAL_COLOR = 0xFF2ED573.toInt() // Green
         private const val MARKER_PVC_COLOR = 0xFFFF6B6B.toInt() // Red
         private const val MARKER_AFIB_COLOR = 0xFFFF4757.toInt() // Dark red
-        private const val MARKER_WARNING_COLOR = 0xFFFFA502.toInt() // Orange
     }
 
     private var samplingRate: Int = 250
@@ -219,24 +218,16 @@ class EcgChartView @JvmOverloads constructor(
     private fun getMarkerLabel(type: ArrhythmiaType): String {
         return when (type) {
             ArrhythmiaType.NORMAL -> "N"
-            ArrhythmiaType.PREMATURE_VENTRICULAR -> "PVC"
-            ArrhythmiaType.ATRIAL_FIBRILLATION -> "AFib"
-            ArrhythmiaType.VENTRICULAR_TACHYCARDIA -> "V-Tach"
-            ArrhythmiaType.BRADYCARDIA -> "Brady"
-            ArrhythmiaType.TACHYCARDIA -> "Tachy"
-            ArrhythmiaType.UNKNOWN -> "?"
+            ArrhythmiaType.SUPRAVENTRICULAR -> "PVC"
+            ArrhythmiaType.VENTRICULAR -> "PVC"
         }
     }
 
     private fun getMarkerColor(type: ArrhythmiaType): Int {
         return when (type) {
             ArrhythmiaType.NORMAL -> MARKER_NORMAL_COLOR
-            ArrhythmiaType.PREMATURE_VENTRICULAR -> MARKER_PVC_COLOR
-            ArrhythmiaType.ATRIAL_FIBRILLATION -> MARKER_AFIB_COLOR
-            ArrhythmiaType.VENTRICULAR_TACHYCARDIA -> MARKER_AFIB_COLOR
-            ArrhythmiaType.BRADYCARDIA -> MARKER_WARNING_COLOR
-            ArrhythmiaType.TACHYCARDIA -> MARKER_WARNING_COLOR
-            ArrhythmiaType.UNKNOWN -> TEXT_COLOR
+            ArrhythmiaType.SUPRAVENTRICULAR -> MARKER_AFIB_COLOR
+            ArrhythmiaType.VENTRICULAR -> MARKER_PVC_COLOR
         }
     }
 

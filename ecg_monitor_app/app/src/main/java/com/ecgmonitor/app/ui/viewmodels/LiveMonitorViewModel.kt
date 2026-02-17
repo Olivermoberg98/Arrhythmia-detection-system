@@ -254,17 +254,16 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      * and appends it to the visible event list and (if recording) the save buffer.
      *
      * The class_id mapping mirrors the ESP32 firmware's label order:
-     *   0 = Normal, 1 = AFib, 2 = Bradycardia, 3 = Tachycardia, 4 = Other
+     *   0 = Normal, 1 = Supraventricular, 2 = Ventricular.
      */
     private fun processInferenceResult(result: InferenceResult) {
         _lastInferenceResult.value = result
 
         val arrhythmiaType = when (result.classId) {
             0    -> ArrhythmiaType.NORMAL
-            1    -> ArrhythmiaType.ATRIAL_FIBRILLATION
-            2    -> ArrhythmiaType.BRADYCARDIA
-            3    -> ArrhythmiaType.TACHYCARDIA
-            else -> ArrhythmiaType.UNKNOWN
+            1    -> ArrhythmiaType.SUPRAVENTRICULAR
+            2    -> ArrhythmiaType.VENTRICULAR
+            else -> ArrhythmiaType.NORMAL
         }
 
         // Approximate sample index from wall-clock difference so the event marker

@@ -33,49 +33,79 @@ enum class DataSource {
 }
 
 /**
- * Arrhythmia event marker
+ * Arrhythmia event marker from BLE InferencePacket.
+ *
+ * Wire protocol (InferencePacket byte 5 = class_id):
+ *   0 = Normal
+ *   1 = Supraventricular (SVEB / APB)
+ *   2 = Ventricular (VEB / PVC)
+ *
+ * valid = false when the model's confidence was below the per-class
+ * threshold on the ESP32. Still displayed but visually de-emphasised.
  */
 data class ArrhythmiaEvent(
     val timestamp: Long,
     val type: ArrhythmiaType,
-    val confidence: Float, // 0.0 to 1.0
+    val confidence: Float,  // 0.0 to 1.0 — softmax score of winning class
     val sampleIndex: Int,
+    val valid: Boolean = true,  // false = below confidence threshold on device
     val description: String = ""
 )
 
-enum class ArrhythmiaType(val displayName: String, val color: Long) {
-    NORMAL("Normal Beat", 0xFF2ED573),
-    PREMATURE_VENTRICULAR("PVC", 0xFFFF6B6B),
-    ATRIAL_FIBRILLATION("AFib", 0xFFFF4757),
-    VENTRICULAR_TACHYCARDIA("V-Tach", 0xFFEE5A6F),
-    BRADYCARDIA("Bradycardia", 0xFFFFA502),
-    TACHYCARDIA("Tachycardia", 0xFFFD79A8),
-    UNKNOWN("Unknown", 0xFF95A5A6);
+/**
+ * Three output classes matching the ESP32 model (MLCfg::Classification).
+ *
+ * class_id → ArrhythmiaType mapping must stay in sync with config.h:
+ *   0 = NORMAL
+ *   1 = SUPRAVENTRICULAR
+ *   2 = VENTRICULAR
+ */
+enum class ArrhythmiaType(
+    val classId: Int,
+    val displayName: String,
+    val color: Long
+) {
+    NORMAL(0, "Normal", 0xFF2ED573),
+    SUPRAVENTRICULAR(1, "Supraventricular", 0xFFFFA502),
+    VENTRICULAR(2, "Ventricular", 0xFFFF4757);
 
     companion object {
-        fun fromMitBihAnnotation(annotation: String): ArrhythmiaType {
-            return when (annotation) {
-                "N" -> NORMAL
-                "V" -> PREMATURE_VENTRICULAR
-                "A" -> ATRIAL_FIBRILLATION
-                "F" -> ATRIAL_FIBRILLATION
-                else -> UNKNOWN
+        /**
+         * Map the class_id byte from the BLE InferencePacket directly to a type.
+         * Returns NORMAL for any unrecognised id so the app never crashes on a
+         * firmware/app version mismatch.
+         */
+        fun fromClassId(classId: Int): ArrhythmiaType =
+            entries.firstOrNull { it.classId == classId } ?: NORMAL
+
+        /**
+         * Map raw MIT-BIH annotation symbols to the same 3-class scheme
+         * used during training (mirrors AAMI_CLASSES in preprocess.py).
+         */
+        fun fromMitBihAnnotation(annotation: String): ArrhythmiaType =
+            when (annotation) {
+                // Normal / non-ectopic
+                "N", "L", "R", "e", "j" -> NORMAL
+                // Supraventricular ectopic
+                "A", "a", "J", "S"      -> SUPRAVENTRICULAR
+                // Ventricular ectopic (F merged into V per training convention)
+                "V", "E", "F"           -> VENTRICULAR
+                else                    -> NORMAL
             }
-        }
     }
 }
 
 /**
- * MIT-BIH Database record metadata
+ * MIT-BIH Database record metadata — unchanged.
  */
 data class MitBihRecord(
-    val recordNumber: String, // e.g., "100", "203"
+    val recordNumber: String,
     val patientInfo: String,
     val annotations: List<MitBihAnnotation>
 )
 
 data class MitBihAnnotation(
     val sampleIndex: Int,
-    val type: String, // N, V, A, F, etc.
+    val type: String,
     val description: String
 )
