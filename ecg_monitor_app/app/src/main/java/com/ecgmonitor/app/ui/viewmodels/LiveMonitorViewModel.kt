@@ -40,9 +40,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
     /**
      * True while the lead-off flag (byte 5 = 0x03) is set in incoming packets.
-     * The UI should display a "Leads off — reattach electrodes" warning when true.
+     * Collected by [LiveMonitorScreen] to drive the leads status indicator.
      */
-    @Suppress("unused")
     val leadsOff: StateFlow<Boolean> = bleManager.leadOffState
 
     private val _uiState = MutableStateFlow<LiveMonitorUiState>(LiveMonitorUiState.Idle)

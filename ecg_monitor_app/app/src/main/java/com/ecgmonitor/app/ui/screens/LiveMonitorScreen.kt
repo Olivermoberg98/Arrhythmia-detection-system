@@ -1,5 +1,12 @@
 package com.ecgmonitor.app.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -80,6 +88,7 @@ fun LiveMonitorScreen(
     val currentSession  by viewModel.currentSession.collectAsStateWithLifecycle()
     val heartRate       by viewModel.heartRate.collectAsStateWithLifecycle()
     val isRecording     by viewModel.isRecording.collectAsStateWithLifecycle()
+    val leadsOff        by viewModel.leadsOff.collectAsStateWithLifecycle()
 
     // Ticker: recompose every second while recording so the duration display counts up.
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -130,6 +139,7 @@ fun LiveMonitorScreen(
                 heartRate = heartRate,
                 isStreaming = connectionState is ConnectionState.Connected,
                 isRecording = isRecording,
+                leadsOff = leadsOff,
                 recordingDuration = if (isRecording && currentSession != null) {
                     (tickMs - currentSession!!.startTime) / 1000
                 } else 0
@@ -236,6 +246,8 @@ fun LiveMonitorScreen(
     }
 }
 
+// region — Private composables
+
 @Composable
 private fun ConnectionStatusBanner(connectionState: ConnectionState) {
     val (text, color, icon) = when (connectionState) {
@@ -289,6 +301,7 @@ private fun VitalSignsCard(
     heartRate: Int,
     isStreaming: Boolean,
     isRecording: Boolean,
+    leadsOff: Boolean,
     recordingDuration: Long
 ) {
     Card(
@@ -303,6 +316,7 @@ private fun VitalSignsCard(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Heart rate
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -332,6 +346,17 @@ private fun VitalSignsCard(
                 color = MedicalTextSecondary.copy(alpha = 0.3f)
             )
 
+            // Leads status indicator
+            LeadsStatusIndicator(leadsOff = leadsOff, isStreaming = isStreaming)
+
+            HorizontalDivider(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(60.dp),
+                color = MedicalTextSecondary.copy(alpha = 0.3f)
+            )
+
+            // Recording duration / data source
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     if (isRecording) Icons.Default.FiberManualRecord else Icons.Default.Bluetooth,
@@ -347,6 +372,74 @@ private fun VitalSignsCard(
                 )
             }
         }
+    }
+}
+
+/**
+ * A small status dot + label giving continuous leads feedback.
+ *
+ * - Green solid dot  = leads on, signal good
+ * - Red pulsing dot  = leads off, electrode contact lost
+ * - Greyed out       = device not connected (no meaningful state to show)
+ */
+@Composable
+private fun LeadsStatusIndicator(leadsOff: Boolean, isStreaming: Boolean) {
+    val dotColor by animateColorAsState(
+        targetValue = when {
+            !isStreaming -> MedicalTextSecondary
+            leadsOff     -> MedicalRed
+            else         -> MedicalGreen
+        },
+        animationSpec = tween(durationMillis = 400),
+        label = "leadsStatusColor"
+    )
+
+    // Pulse ring only when leads are off and device is streaming
+    val infiniteTransition = rememberInfiniteTransition(label = "leadsPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue  = 0f,
+        animationSpec = infiniteRepeatable(
+            animation  = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "leadsPulseAlpha"
+    )
+
+    val label = when {
+        !isStreaming -> "No signal"
+        leadsOff     -> "Leads off"
+        else         -> "Leads on"
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Pulsing ring — only visible when leads are off
+            if (isStreaming && leadsOff) {
+                Canvas(modifier = Modifier.size(32.dp)) {
+                    drawCircle(
+                        color  = MedicalRed,
+                        radius = size.minDimension / 2f,
+                        style  = Stroke(width = 2.dp.toPx()),
+                        alpha  = pulseAlpha
+                    )
+                }
+            }
+
+            // Solid status dot
+            Canvas(modifier = Modifier.size(12.dp)) {
+                drawCircle(color = dotColor)
+            }
+        }
+
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = dotColor
+        )
     }
 }
 
@@ -442,6 +535,8 @@ private fun StatusMessage(message: String, isError: Boolean) {
         }
     }
 }
+
+// endregion
 
 private fun formatDuration(seconds: Long): String {
     val mins = seconds / 60
