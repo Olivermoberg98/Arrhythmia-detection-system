@@ -1,10 +1,49 @@
 package com.ecgmonitor.app.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,14 +54,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.ble.ConnectionState
 import com.ecgmonitor.app.ui.components.EcgChart
-import com.ecgmonitor.app.ui.theme.*
+import com.ecgmonitor.app.ui.theme.MedicalCardBackground
+import com.ecgmonitor.app.ui.theme.MedicalCyan
+import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
+import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
+import com.ecgmonitor.app.ui.theme.MedicalGreen
+import com.ecgmonitor.app.ui.theme.MedicalOrange
+import com.ecgmonitor.app.ui.theme.MedicalRed
+import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorUiState
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorViewModel
 import kotlinx.coroutines.delay
+import java.util.Locale
 
-/**
- * Updated Live Monitor Screen - BLE streaming with recording
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveMonitorScreen(
@@ -30,15 +74,15 @@ fun LiveMonitorScreen(
     onRecordingSaved: (String) -> Unit
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val ecgReadings by viewModel.ecgReadings.collectAsStateWithLifecycle()
-    val visibleEvents by viewModel.visibleArrhythmiaEvents.collectAsStateWithLifecycle()
-    val currentSession by viewModel.currentSession.collectAsStateWithLifecycle()
-    val heartRate by viewModel.heartRate.collectAsStateWithLifecycle()
-    val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
+    val uiState         by viewModel.uiState.collectAsStateWithLifecycle()
+    val ecgReadings     by viewModel.ecgReadings.collectAsStateWithLifecycle()
+    val visibleEvents   by viewModel.visibleArrhythmiaEvents.collectAsStateWithLifecycle()
+    val currentSession  by viewModel.currentSession.collectAsStateWithLifecycle()
+    val heartRate       by viewModel.heartRate.collectAsStateWithLifecycle()
+    val isRecording     by viewModel.isRecording.collectAsStateWithLifecycle()
 
     // Ticker: recompose every second while recording so the duration display counts up.
-    var tickMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(isRecording) {
         while (isRecording) {
             delay(1_000L)
@@ -49,7 +93,7 @@ fun LiveMonitorScreen(
     LaunchedEffect(uiState) {
         if (uiState is LiveMonitorUiState.RecordingSaved) {
             val sessionId = (uiState as LiveMonitorUiState.RecordingSaved).sessionId
-            // Reset state BEFORE navigating so pressing back doesn't re-trigger this effect.
+            // Acknowledge BEFORE navigating so pressing back doesn't re-trigger this effect.
             viewModel.acknowledgeRecordingSaved()
             onRecordingSaved(sessionId)
         }
@@ -63,17 +107,11 @@ fun LiveMonitorScreen(
                         "Live Monitor",
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
-                        fontSize = 18.sp // Slightly smaller for compact look
+                        fontSize = 18.sp
                     )
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MedicalDarkBlue
-                ),
-                actions = {
-                    if (isRecording) {
-                        RecordingIndicator()
-                    }
-                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MedicalDarkBlue),
+                actions = { if (isRecording) RecordingIndicator() }
             )
         },
         containerColor = MedicalDarkBackground
@@ -84,12 +122,10 @@ fun LiveMonitorScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
-            // Connection Status Card
             ConnectionStatusBanner(connectionState)
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Vital Signs Card
             VitalSignsCard(
                 heartRate = heartRate,
                 isStreaming = connectionState is ConnectionState.Connected,
@@ -101,14 +137,11 @@ fun LiveMonitorScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ECG Waveform Chart
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                colors = CardDefaults.cardColors(
-                    containerColor = MedicalCardBackground
-                ),
+                colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(
@@ -116,7 +149,6 @@ fun LiveMonitorScreen(
                         .fillMaxSize()
                         .padding(12.dp)
                 ) {
-                    // Chart Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -128,7 +160,6 @@ fun LiveMonitorScreen(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium
                         )
-
                         Text(
                             "250 Hz",
                             color = MedicalTextSecondary,
@@ -139,7 +170,6 @@ fun LiveMonitorScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // ECG Chart
                     if (ecgReadings.isNotEmpty()) {
                         EcgChart(
                             ecgReadings = ecgReadings,
@@ -156,9 +186,7 @@ fun LiveMonitorScreen(
                                 .weight(1f),
                             contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
                                     Icons.Default.MonitorHeart,
                                     contentDescription = null,
@@ -182,7 +210,6 @@ fun LiveMonitorScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Recording Controls
             RecordingControls(
                 isConnected = connectionState is ConnectionState.Connected,
                 isRecording = isRecording,
@@ -191,7 +218,6 @@ fun LiveMonitorScreen(
                 onClearData = { viewModel.clearData() }
             )
 
-            // Status Messages
             when (uiState) {
                 is LiveMonitorUiState.Error -> {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -202,10 +228,7 @@ fun LiveMonitorScreen(
                 }
                 is LiveMonitorUiState.RecordingSaved -> {
                     Spacer(modifier = Modifier.height(8.dp))
-                    StatusMessage(
-                        message = "Recording saved successfully!",
-                        isError = false
-                    )
+                    StatusMessage(message = "Recording saved successfully!", isError = false)
                 }
                 else -> {}
             }
@@ -216,30 +239,30 @@ fun LiveMonitorScreen(
 @Composable
 private fun ConnectionStatusBanner(connectionState: ConnectionState) {
     val (text, color, icon) = when (connectionState) {
-        is ConnectionState.Connected -> Triple(
+        is ConnectionState.Connected    -> Triple(
             "Connected to ${connectionState.device.name}",
             MedicalGreen,
             Icons.Default.BluetoothConnected
         )
-        is ConnectionState.Connecting -> Triple(
+        is ConnectionState.Connecting   -> Triple(
             "Connecting...",
             MedicalOrange,
             Icons.Default.Bluetooth
         )
         is ConnectionState.Disconnected -> Triple(
-            "Not connected - Go to Settings to connect",
+            "Not connected — Go to Settings to connect",
             MedicalTextSecondary,
             Icons.Default.BluetoothDisabled
         )
-        is ConnectionState.Error -> Triple(
+        is ConnectionState.Error        -> Triple(
             connectionState.message,
             MedicalRed,
             Icons.Default.Error
         )
-        is ConnectionState.Scanning -> Triple(
+        is ConnectionState.Scanning     -> Triple(
             "Scanning for devices...",
             MedicalCyan,
-            Icons.Default.BluetoothSearching
+            Icons.AutoMirrored.Filled.BluetoothSearching
         )
     }
 
@@ -254,18 +277,9 @@ private fun ConnectionStatusBanner(connectionState: ConnectionState) {
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(20.dp)
-            )
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text,
-                color = color,
-                fontSize = 14.sp
-            )
+            Text(text, color = color, fontSize = 14.sp)
         }
     }
 }
@@ -279,9 +293,7 @@ private fun VitalSignsCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MedicalCardBackground
-        ),
+        colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(
@@ -291,10 +303,7 @@ private fun VitalSignsCard(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Heart Rate
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.Favorite,
@@ -311,31 +320,19 @@ private fun VitalSignsCard(
                         color = if (isStreaming) MedicalGreen else MedicalTextSecondary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "BPM",
-                        fontSize = 14.sp,
-                        color = MedicalTextSecondary
-                    )
+                    Text("BPM", fontSize = 14.sp, color = MedicalTextSecondary)
                 }
-                Text(
-                    "Heart Rate",
-                    fontSize = 12.sp,
-                    color = MedicalTextSecondary
-                )
+                Text("Heart Rate", fontSize = 12.sp, color = MedicalTextSecondary)
             }
 
-            // Divider
-            Divider(
+            HorizontalDivider(
                 modifier = Modifier
                     .width(1.dp)
                     .height(60.dp),
                 color = MedicalTextSecondary.copy(alpha = 0.3f)
             )
 
-            // Recording Duration or Data Source
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     if (isRecording) Icons.Default.FiberManualRecord else Icons.Default.Bluetooth,
                     contentDescription = if (isRecording) "Recording" else "Data Source",
@@ -365,7 +362,6 @@ private fun RecordingControls(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        // Record/Stop Button
         Button(
             onClick = if (isRecording) onStopRecording else onStartRecording,
             enabled = isConnected,
@@ -381,29 +377,19 @@ private fun RecordingControls(
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                if (isRecording) "Stop Recording" else "Start Recording",
-                maxLines = 1
-            )
+            Text(if (isRecording) "Stop Recording" else "Start Recording", maxLines = 1)
         }
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Clear Button
         OutlinedButton(
             onClick = onClearData,
             enabled = !isRecording,
             modifier = Modifier.weight(0.6f),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MedicalTextSecondary
-            ),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MedicalTextSecondary),
             contentPadding = PaddingValues(8.dp)
         ) {
-            Icon(
-                Icons.Default.Clear,
-                contentDescription = "Clear",
-                modifier = Modifier.size(24.dp)
-            )
+            Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -425,12 +411,7 @@ private fun RecordingIndicator() {
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                "REC",
-                color = MedicalRed,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("REC", color = MedicalRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -440,10 +421,7 @@ private fun StatusMessage(message: String, isError: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isError)
-                MedicalRed.copy(alpha = 0.1f)
-            else
-                MedicalGreen.copy(alpha = 0.1f)
+            containerColor = if (isError) MedicalRed.copy(alpha = 0.1f) else MedicalGreen.copy(alpha = 0.1f)
         ),
         shape = MaterialTheme.shapes.small
     ) {
@@ -460,11 +438,7 @@ private fun StatusMessage(message: String, isError: Boolean) {
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                message,
-                color = if (isError) MedicalRed else MedicalGreen,
-                fontSize = 14.sp
-            )
+            Text(message, color = if (isError) MedicalRed else MedicalGreen, fontSize = 14.sp)
         }
     }
 }
@@ -472,5 +446,5 @@ private fun StatusMessage(message: String, isError: Boolean) {
 private fun formatDuration(seconds: Long): String {
     val mins = seconds / 60
     val secs = seconds % 60
-    return String.format("%d:%02d", mins, secs)
+    return String.format(Locale.US, "%d:%02d", mins, secs)
 }

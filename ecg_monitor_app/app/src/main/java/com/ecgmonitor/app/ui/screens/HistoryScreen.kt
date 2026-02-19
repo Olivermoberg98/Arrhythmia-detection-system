@@ -1,28 +1,70 @@
 package com.ecgmonitor.app.ui.screens
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
 import com.ecgmonitor.app.data.database.entities.HealthStatus
-import com.ecgmonitor.app.ui.theme.*
+import com.ecgmonitor.app.ui.theme.MedicalCardBackground
+import com.ecgmonitor.app.ui.theme.MedicalCyan
+import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
+import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
+import com.ecgmonitor.app.ui.theme.MedicalGreen
+import com.ecgmonitor.app.ui.theme.MedicalOrange
+import com.ecgmonitor.app.ui.theme.MedicalRed
+import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
 import com.ecgmonitor.app.ui.viewmodels.HistoryViewModel
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,13 +76,10 @@ fun HistoryScreen(
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
 
     var showSortMenu by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()  // Remember scroll state
+    val listState = rememberLazyListState()
 
-    // Auto-scroll to top when sort order changes
     LaunchedEffect(sortOrder) {
-        if (sessions.isNotEmpty()) {
-            listState.animateScrollToItem(0)  // Scroll to first item
-        }
+        if (sessions.isNotEmpty()) listState.animateScrollToItem(0)
     }
 
     Scaffold(
@@ -53,73 +92,35 @@ fun HistoryScreen(
                         color = Color.White
                     )
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MedicalDarkBlue
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MedicalDarkBlue),
                 actions = {
-                    // Sort button with menu
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(
-                                Icons.Default.Sort,
+                                Icons.AutoMirrored.Filled.Sort,
                                 contentDescription = "Sort",
                                 tint = Color.White
                             )
                         }
 
-                        // Menu aligned to button
                         DropdownMenu(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("Most Recent") },
-                                onClick = {
-                                    viewModel.setSortOrder(SortOrder.MOST_RECENT)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = {
-                                    if (sortOrder == SortOrder.MOST_RECENT) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
+                            SortOrder.entries.forEach { order ->
+                                DropdownMenuItem(
+                                    text = { Text(order.label) },
+                                    onClick = {
+                                        viewModel.setSortOrder(order)
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = {
+                                        if (sortOrder == order) {
+                                            Icon(Icons.Default.Check, contentDescription = null)
+                                        }
                                     }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Oldest First") },
-                                onClick = {
-                                    viewModel.setSortOrder(SortOrder.OLDEST)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = {
-                                    if (sortOrder == SortOrder.OLDEST) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Most Arrhythmias") },
-                                onClick = {
-                                    viewModel.setSortOrder(SortOrder.MOST_ARRHYTHMIAS)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = {
-                                    if (sortOrder == SortOrder.MOST_ARRHYTHMIAS) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Longest Duration") },
-                                onClick = {
-                                    viewModel.setSortOrder(SortOrder.LONGEST)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = {
-                                    if (sortOrder == SortOrder.LONGEST) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -136,16 +137,13 @@ fun HistoryScreen(
                 EmptyHistoryState(modifier = Modifier.align(Alignment.Center))
             } else {
                 LazyColumn(
-                    state = listState,  // Use the LazyListState
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(sessions, key = { it.id }) { session ->
-                        SessionCard(
-                            session = session,
-                            onClick = { onSessionClick(session.id) }
-                        )
+                        SessionCard(session = session, onClick = { onSessionClick(session.id) })
                     }
                 }
             }
@@ -162,9 +160,7 @@ private fun SessionCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MedicalCardBackground
-        ),
+        colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -172,7 +168,6 @@ private fun SessionCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header: Name and health status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -185,13 +180,11 @@ private fun SessionCard(
                     color = Color.White,
                     modifier = Modifier.weight(1f)
                 )
-
                 HealthStatusBadge(status = session.healthStatus)
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Date and duration
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -229,38 +222,24 @@ private fun SessionCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Statistics row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                StatItem(
-                    label = "HR",
-                    value = "${session.averageHeartRate}",
-                    unit = "BPM",
-                    color = MedicalGreen
-                )
-
-                StatItem(
-                    label = "Beats",
-                    value = "${session.totalBeats}",
-                    unit = "",
-                    color = MedicalCyan
-                )
-
+                StatItem(label = "HR",    value = "${session.averageHeartRate}", unit = "BPM", color = MedicalGreen)
+                StatItem(label = "Beats", value = "${session.totalBeats}",       unit = "",    color = MedicalCyan)
                 val arrhythmiaCount = session.pvcCount + session.afibCount + session.otherArrhythmiaCount
                 StatItem(
                     label = "Events",
                     value = "$arrhythmiaCount",
-                    unit = "",
+                    unit  = "",
                     color = if (arrhythmiaCount > 0) MedicalRed else MedicalGreen
                 )
             }
 
-            // Arrhythmia breakdown if present
             if (session.pvcCount > 0 || session.afibCount > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider(color = MedicalTextSecondary.copy(alpha = 0.2f))
+                HorizontalDivider(color = MedicalTextSecondary.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -268,18 +247,10 @@ private fun SessionCard(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (session.pvcCount > 0) {
-                        ArrhythmiaChip(
-                            label = "PVC",
-                            count = session.pvcCount,
-                            color = MedicalRed
-                        )
+                        ArrhythmiaChip(label = "PVC",  count = session.pvcCount,  color = MedicalRed)
                     }
                     if (session.afibCount > 0) {
-                        ArrhythmiaChip(
-                            label = "AFib",
-                            count = session.afibCount,
-                            color = MedicalRed
-                        )
+                        ArrhythmiaChip(label = "AFib", count = session.afibCount, color = MedicalRed)
                     }
                 }
             }
@@ -290,11 +261,10 @@ private fun SessionCard(
 @Composable
 private fun HealthStatusBadge(status: HealthStatus) {
     val (color, text) = when (status) {
-        HealthStatus.NORMAL -> MedicalGreen to "Normal"
-        HealthStatus.ATTENTION -> MedicalOrange to "Attention"
-        HealthStatus.CONCERNING -> MedicalRed to "Review"
+        HealthStatus.NORMAL     -> MedicalGreen  to "Normal"
+        HealthStatus.ATTENTION  -> MedicalOrange to "Attention"
+        HealthStatus.CONCERNING -> MedicalRed    to "Review"
     }
-
     Surface(
         color = color.copy(alpha = 0.2f),
         shape = MaterialTheme.shapes.small
@@ -310,22 +280,10 @@ private fun HealthStatusBadge(status: HealthStatus) {
 }
 
 @Composable
-private fun StatItem(
-    label: String,
-    value: String,
-    unit: String,
-    color: Color
-) {
+private fun StatItem(label: String, value: String, unit: String, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = MedicalTextSecondary
-        )
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.Center
-        ) {
+        Text(text = label, fontSize = 11.sp, color = MedicalTextSecondary)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
             Text(
                 text = value,
                 fontSize = 20.sp,
@@ -347,11 +305,7 @@ private fun StatItem(
 }
 
 @Composable
-private fun ArrhythmiaChip(
-    label: String,
-    count: Int,
-    color: Color
-) {
+private fun ArrhythmiaChip(label: String, count: Int, color: Color) {
     Surface(
         color = color.copy(alpha = 0.15f),
         shape = MaterialTheme.shapes.small
@@ -361,17 +315,8 @@ private fun ArrhythmiaChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = "$count",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = label,
-                fontSize = 12.sp,
-                color = color
-            )
+            Text(text = "$count", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = color)
+            Text(text = label,   fontSize = 12.sp, color = color)
         }
     }
 }
@@ -400,32 +345,23 @@ private fun EmptyHistoryState(modifier: Modifier = Modifier) {
             "Start a recording on the Live tab\nto see it appear here",
             fontSize = 14.sp,
             color = MedicalTextSecondary.copy(alpha = 0.7f),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
     }
 }
 
-// Helper functions
-private fun formatDateTime(timestamp: Long): String {
-    val sdf = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault())
-    return sdf.format(Date(timestamp))
-}
+private fun formatDateTime(timestamp: Long): String =
+    SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()).format(Date(timestamp))
 
 private fun formatDuration(seconds: Float): String {
-    val totalSeconds = seconds.toInt()
-    val minutes = totalSeconds / 60
-    val secs = totalSeconds % 60
-    return if (minutes > 0) {
-        "${minutes}m ${secs}s"
-    } else {
-        "${secs}s"
-    }
+    val mins = seconds.toInt() / 60
+    val secs = seconds.toInt() % 60
+    return if (mins > 0) "${mins}m ${secs}s" else "${secs}s"
 }
 
-// Sort order enum
-enum class SortOrder {
-    MOST_RECENT,
-    OLDEST,
-    MOST_ARRHYTHMIAS,
-    LONGEST
+enum class SortOrder(val label: String) {
+    MOST_RECENT("Most Recent"),
+    OLDEST("Oldest First"),
+    MOST_ARRHYTHMIAS("Most Arrhythmias"),
+    LONGEST("Longest Duration")
 }

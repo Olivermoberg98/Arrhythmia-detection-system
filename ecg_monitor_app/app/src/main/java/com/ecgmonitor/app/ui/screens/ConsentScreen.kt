@@ -1,14 +1,33 @@
 package com.ecgmonitor.app.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -17,15 +36,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ecgmonitor.app.ui.theme.*
+import com.ecgmonitor.app.ui.theme.MedicalCardBackground
+import com.ecgmonitor.app.ui.theme.MedicalCyan
+import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
+import com.ecgmonitor.app.ui.theme.MedicalDarkBlue
+import com.ecgmonitor.app.ui.theme.MedicalGreen
+import com.ecgmonitor.app.ui.theme.MedicalOrange
+import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
 
 /**
- * Shown on first launch (and whenever consent version changes).
- * User must explicitly accept before accessing the app.
+ * Shown on first launch and whenever [ConsentManager.CONSENT_VERSION] changes.
+ * The user must scroll to the bottom and explicitly accept before accessing the app.
  *
  * Regulatory basis: GDPR Article 9 — explicit consent required for health data.
- * The consent text below constitutes the "informed" part of informed consent.
- * Do not modify wording without incrementing ConsentManager.CONSENT_VERSION.
+ * Do not modify the consent text without incrementing [ConsentManager.CONSENT_VERSION].
  */
 @Composable
 fun ConsentScreen(
@@ -35,7 +59,6 @@ fun ConsentScreen(
     var hasScrolledToBottom by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
 
-    // Enable accept button once user has scrolled through all content
     LaunchedEffect(scrollState.value) {
         if (scrollState.value >= scrollState.maxValue - 10) {
             hasScrolledToBottom = true
@@ -45,7 +68,6 @@ fun ConsentScreen(
     Surface(modifier = Modifier.fillMaxSize(), color = MedicalDarkBackground) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // Header
             Surface(color = MedicalDarkBlue) {
                 Column(
                     modifier = Modifier
@@ -76,7 +98,6 @@ fun ConsentScreen(
                 }
             }
 
-            // Scrollable consent content
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -117,7 +138,6 @@ fun ConsentScreen(
                 )
             }
 
-            // Action buttons
             Surface(color = MedicalCardBackground) {
                 Column(
                     modifier = Modifier
@@ -163,12 +183,12 @@ fun ConsentScreen(
 @Composable
 private fun ConsentSection(icon: ImageVector, title: String, body: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = MedicalCyan, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
         Text(body, fontSize = 13.sp, color = MedicalTextSecondary, lineHeight = 20.sp)
-        Divider(color = MedicalTextSecondary.copy(alpha = 0.15f))
+        HorizontalDivider(color = MedicalTextSecondary.copy(alpha = 0.15f))
     }
 }

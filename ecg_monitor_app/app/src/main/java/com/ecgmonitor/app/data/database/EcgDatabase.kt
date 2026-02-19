@@ -8,8 +8,16 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ecgmonitor.app.data.database.converters.Converters
-import com.ecgmonitor.app.data.database.dao.*
-import com.ecgmonitor.app.data.database.entities.*
+import com.ecgmonitor.app.data.database.dao.AuditLogDao
+import com.ecgmonitor.app.data.database.dao.ArrhythmiaEventDao
+import com.ecgmonitor.app.data.database.dao.ConsentDao
+import com.ecgmonitor.app.data.database.dao.EcgReadingDao
+import com.ecgmonitor.app.data.database.dao.EcgSessionDao
+import com.ecgmonitor.app.data.database.entities.ArrhythmiaEventEntity
+import com.ecgmonitor.app.data.database.entities.AuditLogEntity
+import com.ecgmonitor.app.data.database.entities.ConsentEntity
+import com.ecgmonitor.app.data.database.entities.EcgReadingEntity
+import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
 
 @Database(
     entities = [
@@ -20,7 +28,7 @@ import com.ecgmonitor.app.data.database.entities.*
         AuditLogEntity::class
     ],
     version = 2,
-    exportSchema = true  // Set true so schema history is tracked in version control
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class EcgDatabase : RoomDatabase() {
@@ -32,10 +40,11 @@ abstract class EcgDatabase : RoomDatabase() {
     abstract fun auditLogDao(): AuditLogDao
 
     companion object {
+
         @Volatile
         private var INSTANCE: EcgDatabase? = null
 
-        // Migration from version 1 (no consent/audit) to version 2
+        /** Adds consent_records and audit_log tables introduced in version 2. */
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
@@ -59,18 +68,16 @@ abstract class EcgDatabase : RoomDatabase() {
             }
         }
 
-        fun getDatabase(context: Context): EcgDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+        fun getDatabase(context: Context): EcgDatabase =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
                     .addMigrations(MIGRATION_1_2)
                     .build()
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
-        }
     }
 }

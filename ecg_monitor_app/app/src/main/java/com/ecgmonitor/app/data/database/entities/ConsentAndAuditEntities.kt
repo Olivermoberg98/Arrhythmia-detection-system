@@ -4,22 +4,22 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Stores each consent event — created when user grants or withdraws consent.
- * Never deleted, forms a permanent audit trail of consent decisions.
+ * Immutable record of a consent grant or withdrawal.
+ * Forms a permanent audit trail — rows are never deleted.
  */
 @Entity(tableName = "consent_records")
 data class ConsentEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val timestamp: Long,
-    val consentVersion: String,   // e.g. "1.0" — bump when wording changes
+    val consentVersion: String,
     val granted: Boolean,
-    val ipAddress: String? = null // optional, for future cloud use
+    val ipAddress: String? = null
 )
 
 /**
- * Audit log entry — one row per significant data access or modification.
- * Required by IEC 62304 Class B/C and supports ISO 14971 incident traceability.
+ * One entry per significant data access or modification.
+ * Supports IEC 62304 Class B/C traceability and ISO 14971 incident review.
  */
 @Entity(tableName = "audit_log")
 data class AuditLogEntity(
@@ -27,8 +27,8 @@ data class AuditLogEntity(
     val id: Long = 0,
     val timestamp: Long,
     val action: AuditAction,
-    val sessionId: String? = null,  // null for app-level actions
-    val detail: String? = null      // freeform context
+    val sessionId: String? = null,
+    val detail: String? = null
 )
 
 enum class AuditAction {

@@ -9,14 +9,14 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ConsentDao {
+
     @Insert
     suspend fun insert(consent: ConsentEntity)
 
-    /** Returns the most recent consent event. */
     @Query("SELECT * FROM consent_records ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatest(): ConsentEntity?
 
-    /** Full history — used if user requests a data export of their consent records. */
+    /** Returns full consent history, e.g. for a user-requested data export. */
     @Query("SELECT * FROM consent_records ORDER BY timestamp DESC")
     fun getAll(): Flow<List<ConsentEntity>>
 
@@ -26,6 +26,7 @@ interface ConsentDao {
 
 @Dao
 interface AuditLogDao {
+
     @Insert
     suspend fun insert(entry: AuditLogEntity)
 

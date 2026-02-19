@@ -1,14 +1,22 @@
 package com.ecgmonitor.app.data.repository
 
 import com.ecgmonitor.app.data.database.EcgDatabase
-import com.ecgmonitor.app.data.database.entities.*
+import com.ecgmonitor.app.data.database.entities.ArrhythmiaEventEntity
+import com.ecgmonitor.app.data.database.entities.EcgReadingEntity
+import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
+import com.ecgmonitor.app.data.database.entities.HealthStatus
+import com.ecgmonitor.app.data.database.entities.SessionWithData
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
-import com.ecgmonitor.app.data.models.*
+import com.ecgmonitor.app.data.models.ArrhythmiaEvent
+import com.ecgmonitor.app.data.models.ArrhythmiaType
+import com.ecgmonitor.app.data.models.DataSource
+import com.ecgmonitor.app.data.models.EcgReading
+import com.ecgmonitor.app.data.models.EcgSession
 import kotlinx.coroutines.flow.Flow
 import timber.log.Timber
 
 class EcgRepository(
-    private val database: EcgDatabase,
+    database: EcgDatabase,
     private val mitBihLoader: MitBihDataLoader
 ) {
 
@@ -17,33 +25,21 @@ class EcgRepository(
     private val eventDao = database.eventDao()
 
     /**
-     * Get all sessions as Flow
+     * Heart-rate statistics supplied by the ViewModel (derived from real beat detection),
+     * avoiding the incorrect fallback of computing RR intervals from ESP32 inference
+     * events, which are rhythm classifications rather than individual beat markers.
      */
-    fun getAllSessions(): Flow<List<EcgSessionEntity>> {
-        return sessionDao.getAllSessions()
-    }
+    data class HeartRateStats(val avg: Int, val min: Int, val max: Int)
 
-    /**
-     * Get specific session with all data
-     */
+    fun getAllSessions(): Flow<List<EcgSessionEntity>> = sessionDao.getAllSessions()
+
     suspend fun getSessionWithData(sessionId: String): SessionWithData? {
         val session = sessionDao.getSession(sessionId) ?: return null
         val readings = readingDao.getReadingsForSession(sessionId)
         val events = eventDao.getEventsForSession(sessionId)
-
         return SessionWithData(session, readings, events)
     }
 
-    /**
-     * Pre-computed heart-rate statistics passed in from the ViewModel.
-     * Avoids the broken fallback that tried to compute RR intervals from
-     * ESP32 inference events (which are rhythm classifications, not beat markers).
-     */
-    data class HeartRateStats(val avg: Int, val min: Int, val max: Int)
-
-    /**
-     * Save a complete ECG session
-     */
     suspend fun saveSession(
         readings: List<EcgReading>,
         events: List<ArrhythmiaEvent>,
@@ -52,13 +48,8 @@ class EcgRepository(
         heartRateStats: HeartRateStats? = null
     ): String {
         val sessionId = sessionMetadata.id
+        val stats = calculateSessionStatistics(events, heartRateStats)
 
-        // Calculate statistics — use ViewModel-supplied HR stats when available
-        // (those come from real beat detection).  Fall back to event-based calculation
-        // only for MIT-BIH sessions where individual beat events ARE available.
-        val stats = calculateSessionStatistics(events, sessionMetadata, heartRateStats)
-
-        // Create session entity
         val sessionEntity = EcgSessionEntity(
             id = sessionId,
             name = sessionName ?: generateSessionName(sessionMetadata),
@@ -79,7 +70,6 @@ class EcgRepository(
             healthStatus = determineHealthStatus(stats)
         )
 
-        // Convert readings to entities
         val readingEntities = readings.map { reading ->
             EcgReadingEntity(
                 sessionId = sessionId,
@@ -89,7 +79,6 @@ class EcgRepository(
             )
         }
 
-        // Convert events to entities
         val eventEntities = events.map { event ->
             ArrhythmiaEventEntity(
                 sessionId = sessionId,
@@ -101,19 +90,14 @@ class EcgRepository(
             )
         }
 
-        // Save to database
         sessionDao.insertSession(sessionEntity)
         readingDao.insertReadings(readingEntities)
         eventDao.insertEvents(eventEntities)
 
         Timber.i("Saved session $sessionId: ${readings.size} readings, ${events.size} events")
-
         return sessionId
     }
 
-    /**
-     * Delete a session and all associated data
-     */
     suspend fun deleteSession(sessionId: String) {
         sessionDao.deleteSessionById(sessionId)
         readingDao.deleteReadingsForSession(sessionId)
@@ -121,29 +105,19 @@ class EcgRepository(
         Timber.i("Deleted session $sessionId")
     }
 
-    /**
-     * Update session name
-     */
     suspend fun updateSessionName(sessionId: String, newName: String) {
         val session = sessionDao.getSession(sessionId) ?: return
         sessionDao.updateSession(session.copy(name = newName))
     }
 
-    /**
-     * Update session notes
-     */
     suspend fun updateSessionNotes(sessionId: String, notes: String) {
         val session = sessionDao.getSession(sessionId) ?: return
         sessionDao.updateSession(session.copy(notes = notes))
     }
 
-    /**
-     * Load MIT-BIH data and save to database
-     */
     suspend fun loadAndSaveMitBihRecord(recordNumber: String): Result<String> {
         return try {
-            val result = mitBihLoader.loadRecord(recordNumber)
-            result.fold(
+            mitBihLoader.loadRecord(recordNumber).fold(
                 onSuccess = { recordData ->
                     val sessionId = saveSession(
                         readings = recordData.readings,
@@ -153,44 +127,29 @@ class EcgRepository(
                     )
                     Result.success(sessionId)
                 },
-                onFailure = { error ->
-                    Result.failure(error)
-                }
+                onFailure = { error -> Result.failure(error) }
             )
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    /**
-     * Check if MIT-BIH records are already in database
-     */
-    suspend fun areMitBihRecordsLoaded(): Boolean {
-        val sessionCount = sessionDao.getSessionCount()
-        return sessionCount >= 2 // Assuming we have 2 MIT-BIH records
-    }
-
-    /**
-     * Initialize database with MIT-BIH records if empty
-     */
     suspend fun initializeMitBihRecords() {
-        if (!areMitBihRecordsLoaded()) {
+        if (sessionDao.getSessionCount() < MitBihDataLoader.AVAILABLE_RECORDS.size) {
             Timber.i("Loading MIT-BIH records into database...")
-            MitBihDataLoader.AVAILABLE_RECORDS.forEach { recordNumber ->
-                loadAndSaveMitBihRecord(recordNumber)
-            }
+            MitBihDataLoader.AVAILABLE_RECORDS.forEach { loadAndSaveMitBihRecord(it) }
         }
     }
 
-    // Helper functions
+    // region Private helpers
 
     private fun generateSessionName(metadata: EcgSession): String {
-        val dateFormat = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
-        val date = dateFormat.format(java.util.Date(metadata.startTime))
+        val formatter = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+        val date = formatter.format(java.util.Date(metadata.startTime))
         return when (metadata.source) {
             DataSource.MIT_BIH_DATABASE -> "MIT-BIH - $date"
-            DataSource.ESP32_DEVICE -> "Recording - $date"
-            DataSource.SIMULATION -> "Simulation - $date"
+            DataSource.ESP32_DEVICE     -> "Recording - $date"
+            DataSource.SIMULATION       -> "Simulation - $date"
         }
     }
 
@@ -207,43 +166,35 @@ class EcgRepository(
 
     private fun calculateSessionStatistics(
         events: List<ArrhythmiaEvent>,
-        metadata: EcgSession,
         providedHrStats: HeartRateStats? = null
     ): SessionStatistics {
         val totalBeats = events.size
 
         // Prefer ViewModel-supplied HR stats (accurate beat detection).
-        // Fall back to RR-from-events only when not provided (e.g. MIT-BIH import).
-        val avgHR: Int
-        val minHR: Int
-        val maxHR: Int
-
-        if (providedHrStats != null) {
-            avgHR = providedHrStats.avg
-            minHR = providedHrStats.min
-            maxHR = providedHrStats.max
+        // Fall back to RR-from-events only for MIT-BIH imports where events
+        // represent individual beat annotations, not rhythm-classification intervals.
+        val (avgHR, minHR, maxHR) = if (providedHrStats != null) {
+            Triple(providedHrStats.avg, providedHrStats.min, providedHrStats.max)
         } else {
-            // Legacy path: compute from event timestamps (only valid when events are
-            // individual beat annotations, not rhythm-classification intervals).
-            val rrIntervals = mutableListOf<Long>()
-            for (i in 1 until events.size) {
-                rrIntervals.add(events[i].timestamp - events[i - 1].timestamp)
+            val rrIntervals = (1 until events.size).map { i ->
+                events[i].timestamp - events[i - 1].timestamp
             }
-            avgHR = if (rrIntervals.isNotEmpty()) {
+            val avg = if (rrIntervals.isNotEmpty()) {
                 (60000.0 / rrIntervals.average()).toInt().coerceIn(40, 200)
             } else {
-                70  // neutral default — still better than always showing 75
+                70
             }
             val hrValues = rrIntervals.map { (60000.0 / it).toInt() }
-            minHR = hrValues.minOrNull()?.coerceIn(40, 200) ?: avgHR
-            maxHR = hrValues.maxOrNull()?.coerceIn(40, 200) ?: avgHR
+            Triple(
+                avg,
+                hrValues.minOrNull()?.coerceIn(40, 200) ?: avg,
+                hrValues.maxOrNull()?.coerceIn(40, 200) ?: avg
+            )
         }
 
-        // Count arrhythmia types
         val normalBeats = events.count { it.type == ArrhythmiaType.NORMAL }
         val pvcCount = events.count { it.type == ArrhythmiaType.VENTRICULAR }
         val afibCount = events.count { it.type == ArrhythmiaType.SUPRAVENTRICULAR }
-        val otherCount = totalBeats - normalBeats - pvcCount - afibCount
 
         return SessionStatistics(
             averageHeartRate = avgHR,
@@ -253,7 +204,7 @@ class EcgRepository(
             normalBeats = normalBeats,
             pvcCount = pvcCount,
             afibCount = afibCount,
-            otherArrhythmiaCount = otherCount
+            otherArrhythmiaCount = totalBeats - normalBeats - pvcCount - afibCount
         )
     }
 
@@ -263,11 +214,13 @@ class EcgRepository(
         } else 0f
 
         return when {
-            stats.afibCount > 0 -> HealthStatus.CONCERNING
-            pvcPercentage > 20 -> HealthStatus.CONCERNING
-            pvcPercentage > 10 -> HealthStatus.ATTENTION
+            stats.afibCount > 0                                          -> HealthStatus.CONCERNING
+            pvcPercentage > 20                                           -> HealthStatus.CONCERNING
+            pvcPercentage > 10                                           -> HealthStatus.ATTENTION
             stats.averageHeartRate > 100 || stats.averageHeartRate < 50 -> HealthStatus.ATTENTION
-            else -> HealthStatus.NORMAL
+            else                                                         -> HealthStatus.NORMAL
         }
     }
+
+    // endregion
 }

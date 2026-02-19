@@ -2,24 +2,18 @@ package com.ecgmonitor.app.navigation
 
 import kotlinx.serialization.Serializable
 
-/**
- * Navigation routes using type-safe navigation
- */
+/** Type-safe navigation route definitions used by [NavigationHost]. */
 sealed class Screen {
 
     @Serializable
-    object LiveMonitor : Screen()
+    data object LiveMonitor : Screen()
 
     @Serializable
-    object History : Screen()
+    data object History : Screen()
 
     @Serializable
     data class SessionDetail(val sessionId: String) : Screen()
 
     @Serializable
-    object Settings : Screen()
+    data object Settings : Screen()
 }
-
-/**
- * Bottom navigation items
- */

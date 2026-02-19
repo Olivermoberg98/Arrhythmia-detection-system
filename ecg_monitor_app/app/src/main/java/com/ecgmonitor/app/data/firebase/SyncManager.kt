@@ -16,8 +16,8 @@ class SyncManager(
     }
 
     /**
-     * Uploads session metadata and events after local save.
-     * Raw readings are intentionally excluded — Firestore only, no Storage needed.
+     * Uploads session metadata and events to Firestore after a local save.
+     * Raw readings are intentionally excluded — Firestore only, no Cloud Storage needed.
      */
     suspend fun syncSession(sessionId: String) {
         if (!firebaseRepository.isAuthenticated) {

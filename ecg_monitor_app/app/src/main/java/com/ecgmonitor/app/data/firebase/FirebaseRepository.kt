@@ -20,8 +20,6 @@ class FirebaseRepository {
 
     val isAuthenticated: Boolean get() = auth.currentUser != null
 
-    // ── Anonymous sign-in ─────────────────────────────────────────────────────
-
     suspend fun ensureSignedIn() {
         if (auth.currentUser != null) return
         try {
@@ -32,12 +30,10 @@ class FirebaseRepository {
         }
     }
 
-    // ── Upload ────────────────────────────────────────────────────────────────
-
     /**
      * Uploads session metadata and arrhythmia events to Firestore.
-     * Raw waveform readings are NOT uploaded — they stay in local Room DB only.
-     * This keeps the implementation free-tier compatible (no Cloud Storage needed).
+     * Raw waveform readings are intentionally excluded — they remain in the
+     * local Room database only, keeping this free-tier compatible.
      */
     suspend fun uploadSession(
         session: EcgSessionEntity,
@@ -52,31 +48,30 @@ class FirebaseRepository {
         Timber.i("Uploading session ${session.id}")
 
         try {
-            // Session metadata
             firestore
                 .collection("users").document(uid)
                 .collection("sessions").document(session.id)
                 .set(mapOf(
-                    "name" to session.name,
-                    "startTime" to session.startTime,
-                    "endTime" to session.endTime,
-                    "samplingRate" to session.samplingRate,
-                    "durationSeconds" to session.durationSeconds,
-                    "averageHeartRate" to session.averageHeartRate,
-                    "minHeartRate" to session.minHeartRate,
-                    "maxHeartRate" to session.maxHeartRate,
-                    "totalBeats" to session.totalBeats,
-                    "normalBeats" to session.normalBeats,
-                    "pvcCount" to session.pvcCount,
-                    "afibCount" to session.afibCount,
+                    "name"                 to session.name,
+                    "startTime"            to session.startTime,
+                    "endTime"              to session.endTime,
+                    "samplingRate"         to session.samplingRate,
+                    "durationSeconds"      to session.durationSeconds,
+                    "averageHeartRate"     to session.averageHeartRate,
+                    "minHeartRate"         to session.minHeartRate,
+                    "maxHeartRate"         to session.maxHeartRate,
+                    "totalBeats"           to session.totalBeats,
+                    "normalBeats"          to session.normalBeats,
+                    "pvcCount"             to session.pvcCount,
+                    "afibCount"            to session.afibCount,
                     "otherArrhythmiaCount" to session.otherArrhythmiaCount,
-                    "healthStatus" to session.healthStatus.name,
-                    "totalSamples" to session.totalSamples,
-                    "uploadedAt" to System.currentTimeMillis()
+                    "healthStatus"         to session.healthStatus.name,
+                    "totalSamples"         to session.totalSamples,
+                    "uploadedAt"           to System.currentTimeMillis()
                 ))
                 .await()
 
-            // Arrhythmia events (batched write — max 500 per batch)
+            // Arrhythmia events written in batches (Firestore limit: 500 per batch)
             if (events.isNotEmpty()) {
                 events.chunked(500).forEach { chunk ->
                     val batch = firestore.batch()
@@ -86,11 +81,11 @@ class FirebaseRepository {
                             .collection("events")
                             .document("${event.sessionId}_${event.sampleIndex}")
                         batch.set(ref, mapOf(
-                            "sessionId" to event.sessionId,
+                            "sessionId"   to event.sessionId,
                             "sampleIndex" to event.sampleIndex,
-                            "timestamp" to event.timestamp,
-                            "type" to event.type,
-                            "confidence" to event.confidence,
+                            "timestamp"   to event.timestamp,
+                            "type"        to event.type,
+                            "confidence"  to event.confidence,
                             "description" to event.description
                         ))
                     }
@@ -106,8 +101,6 @@ class FirebaseRepository {
             _uploadState.value = UploadState.Error(e.message ?: "Upload failed")
         }
     }
-
-    // ── Delete ────────────────────────────────────────────────────────────────
 
     suspend fun deleteAllCloudData() {
         val uid = auth.currentUser?.uid ?: return
@@ -132,6 +125,7 @@ class FirebaseRepository {
         }
     }
 
+    @Suppress("unused")
     fun resetUploadState() {
         _uploadState.value = UploadState.Idle
     }

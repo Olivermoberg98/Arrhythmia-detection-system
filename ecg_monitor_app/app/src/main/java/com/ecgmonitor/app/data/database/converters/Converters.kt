@@ -7,22 +7,14 @@ import com.ecgmonitor.app.data.models.DataSource
 class Converters {
 
     @TypeConverter
-    fun fromDataSource(value: DataSource): String {
-        return value.name
-    }
+    fun fromDataSource(value: DataSource): String = value.name
 
     @TypeConverter
-    fun toDataSource(value: String): DataSource {
-        return DataSource.valueOf(value)
-    }
+    fun toDataSource(value: String): DataSource = DataSource.valueOf(value)
 
     @TypeConverter
-    fun fromHealthStatus(value: HealthStatus): String {
-        return value.name
-    }
+    fun fromHealthStatus(value: HealthStatus): String = value.name
 
     @TypeConverter
-    fun toHealthStatus(value: String): HealthStatus {
-        return HealthStatus.valueOf(value)
-    }
+    fun toHealthStatus(value: String): HealthStatus = HealthStatus.valueOf(value)
 }

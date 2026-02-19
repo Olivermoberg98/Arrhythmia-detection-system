@@ -17,9 +17,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val discoveredDevices: StateFlow<List<BleDevice>> = bleManager.discoveredDevices
 
     fun startScanning() {
-        viewModelScope.launch {
-            bleManager.startScanning()
-        }
+        viewModelScope.launch { bleManager.startScanning() }
     }
 
     fun stopScanning() {
@@ -27,24 +25,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun connectToDevice(device: BleDevice) {
-        viewModelScope.launch {
-            bleManager.connect(device)
-        }
+        viewModelScope.launch { bleManager.connect(device) }
     }
 
     fun disconnect() {
-        viewModelScope.launch {
-            bleManager.disconnect()
-        }
+        viewModelScope.launch { bleManager.disconnect() }
     }
 
-    fun isBluetoothEnabled(): Boolean {
-        return bleManager.isBluetoothEnabled()
-    }
+    @Suppress("unused")
+    fun isBluetoothEnabled(): Boolean = bleManager.isBluetoothEnabled()
 
-    fun hasRequiredPermissions(): Boolean {
-        return bleManager.hasRequiredPermissions()
-    }
+    @Suppress("unused")
+    fun hasRequiredPermissions(): Boolean = bleManager.hasRequiredPermissions()
 
     fun setError(message: String) {
         bleManager.setError(message)

@@ -2,6 +2,8 @@ package com.ecgmonitor.app.utils
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import com.ecgmonitor.app.data.database.entities.SessionWithData
 import kotlinx.coroutines.Dispatchers
@@ -10,165 +12,131 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
-/**
- * Export Manager for PDF and CSV generation
- */
+/** Generates PDF and CSV exports for a recorded ECG session. */
 class ExportManager(private val context: Context) {
 
-    /**
-     * Export session as PDF
-     * Returns the file path
-     */
+    /** Renders a one-page A4 PDF report and returns the written [File]. */
     suspend fun exportToPdf(
         sessionData: SessionWithData,
         chartBitmap: Bitmap? = null
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
             val pdfDocument = PdfDocument()
-            val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 size
-            val page = pdfDocument.startPage(pageInfo)
-            val canvas = page.canvas
-            val paint = android.graphics.Paint()
+            val pageInfo    = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
+            val page        = pdfDocument.startPage(pageInfo)
+            val canvas      = page.canvas
+            val paint       = Paint()
 
-            var yPosition = 50f
+            val dateFormat  = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+            val session     = sessionData.session
 
-            // Title
-            paint.textSize = 20f
-            paint.isFakeBoldText = true
-            canvas.drawText("ECG Session Report", 50f, yPosition, paint)
-            yPosition += 40f
+            var y = 50f
 
-            // Session metadata
-            paint.textSize = 12f
+            // Helpers that keep the repeated canvas.drawText boilerplate concise.
+            fun text(s: String, x: Float = 50f): Float {
+                canvas.drawText(s, x, y, paint)
+                return y + paint.textSize + 8f
+            }
+
+            paint.textSize = 20f; paint.isFakeBoldText = true
+            y = text("ECG Session Report")
+            y += 12f
+
+            paint.textSize = 12f; paint.isFakeBoldText = false
+            y = text("Session: ${session.name}")
+            y = text("Date: ${dateFormat.format(Date(session.startTime))}")
+            y = text("Duration: ${session.durationSeconds}s")
+            y = text("Sampling Rate: ${session.samplingRate} Hz")
+            y += 16f
+
+            paint.isFakeBoldText = true;  y = text("Vital Statistics");     y += 4f
             paint.isFakeBoldText = false
+            y = text("Average Heart Rate: ${session.averageHeartRate} BPM",  x = 70f)
+            y = text("Min Heart Rate: ${session.minHeartRate} BPM",          x = 70f)
+            y = text("Max Heart Rate: ${session.maxHeartRate} BPM",          x = 70f)
+            y = text("Total Beats: ${session.totalBeats}",                   x = 70f)
+            y += 16f
 
-            val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
-            canvas.drawText("Session: ${sessionData.session.name}", 50f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Date: ${dateFormat.format(Date(sessionData.session.startTime))}", 50f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Duration: ${sessionData.session.durationSeconds}s", 50f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Sampling Rate: ${sessionData.session.samplingRate} Hz", 50f, yPosition, paint)
-            yPosition += 40f
-
-            // Statistics
-            paint.isFakeBoldText = true
-            canvas.drawText("Vital Statistics", 50f, yPosition, paint)
-            yPosition += 25f
+            paint.isFakeBoldText = true;  y = text("Arrhythmia Analysis");  y += 4f
             paint.isFakeBoldText = false
+            y = text("Normal Beats: ${session.normalBeats}",                 x = 70f)
+            y = text("PVCs: ${session.pvcCount}",                            x = 70f)
+            y = text("AFib Events: ${session.afibCount}",                    x = 70f)
+            y = text("Other Arrhythmias: ${session.otherArrhythmiaCount}",   x = 70f)
+            y += 16f
 
-            canvas.drawText("Average Heart Rate: ${sessionData.session.averageHeartRate} BPM", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Min Heart Rate: ${sessionData.session.minHeartRate} BPM", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Max Heart Rate: ${sessionData.session.maxHeartRate} BPM", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Total Beats: ${sessionData.session.totalBeats}", 70f, yPosition, paint)
-            yPosition += 40f
-
-            // Arrhythmia summary
-            paint.isFakeBoldText = true
-            canvas.drawText("Arrhythmia Analysis", 50f, yPosition, paint)
-            yPosition += 25f
-            paint.isFakeBoldText = false
-
-            canvas.drawText("Normal Beats: ${sessionData.session.normalBeats}", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("PVCs: ${sessionData.session.pvcCount}", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("AFib Events: ${sessionData.session.afibCount}", 70f, yPosition, paint)
-            yPosition += 20f
-            canvas.drawText("Other Arrhythmias: ${sessionData.session.otherArrhythmiaCount}", 70f, yPosition, paint)
-            yPosition += 40f
-
-            // Chart image (if provided)
-            if (chartBitmap != null && yPosition + 200 < pageInfo.pageHeight) {
-                val scaledWidth = 495f // Fit to page width with margins
+            if (chartBitmap != null && y + 200 < pageInfo.pageHeight) {
+                val scaledWidth  = 495f
                 val scaledHeight = (chartBitmap.height.toFloat() / chartBitmap.width) * scaledWidth
                 canvas.drawBitmap(
                     chartBitmap,
                     null,
-                    android.graphics.RectF(50f, yPosition, 50f + scaledWidth, yPosition + scaledHeight),
+                    RectF(50f, y, 50f + scaledWidth, y + scaledHeight),
                     paint
                 )
-                yPosition += scaledHeight + 20f
+                y += scaledHeight + 20f
             }
 
-            // Health status
-            yPosition = maxOf(yPosition, 700f) // Near bottom
+            // Health status pinned near the bottom of the page
+            y = maxOf(y, pageInfo.pageHeight - 80f)
             paint.isFakeBoldText = true
-            canvas.drawText("Health Status: ${sessionData.session.healthStatus}", 50f, yPosition, paint)
+            canvas.drawText("Health Status: ${session.healthStatus}", 50f, y, paint)
 
             pdfDocument.finishPage(page)
 
-            // Save to file
-            val outputDir = context.getExternalFilesDir(null)
-            val fileName = "ECG_Report_${sessionData.session.id}.pdf"
-            val file = File(outputDir, fileName)
-
-            FileOutputStream(file).use { outputStream ->
-                pdfDocument.writeTo(outputStream)
-            }
-
+            val file = outputFile("ECG_Report_${session.id}.pdf")
+            FileOutputStream(file).use { pdfDocument.writeTo(it) }
             pdfDocument.close()
 
             Timber.i("PDF exported: ${file.absolutePath}")
             Result.success(file)
-
         } catch (e: Exception) {
             Timber.e(e, "Failed to export PDF")
             Result.failure(e)
         }
     }
 
-    /**
-     * Export session as CSV
-     * Returns the file path
-     */
+    /** Writes a CSV file with session metadata header rows followed by per-sample data. */
     suspend fun exportToCsv(sessionData: SessionWithData): Result<File> = withContext(Dispatchers.IO) {
         try {
-            val outputDir = context.getExternalFilesDir(null)
-            val fileName = "ECG_Data_${sessionData.session.id}.csv"
-            val file = File(outputDir, fileName)
+            val session = sessionData.session
+            val file    = outputFile("ECG_Data_${session.id}.csv")
 
             FileOutputStream(file).bufferedWriter().use { writer ->
-                // Header - Session metadata
-                writer.write("# ECG Session Export\n")
-                writer.write("# Session ID: ${sessionData.session.id}\n")
-                writer.write("# Name: ${sessionData.session.name}\n")
-                writer.write("# Start Time: ${sessionData.session.startTime}\n")
-                writer.write("# Duration: ${sessionData.session.durationSeconds}s\n")
-                writer.write("# Sampling Rate: ${sessionData.session.samplingRate} Hz\n")
-                writer.write("# Avg Heart Rate: ${sessionData.session.averageHeartRate} BPM\n")
-                writer.write("#\n")
+                writer.write(
+                    """
+                    |# ECG Session Export
+                    |# Session ID: ${session.id}
+                    |# Name: ${session.name}
+                    |# Start Time: ${session.startTime}
+                    |# Duration: ${session.durationSeconds}s
+                    |# Sampling Rate: ${session.samplingRate} Hz
+                    |# Avg Heart Rate: ${session.averageHeartRate} BPM
+                    |#
+                    |SampleIndex,Timestamp,Voltage,EventType,Confidence
+                    """.trimMargin() + "\n"
+                )
 
-                // Column headers
-                writer.write("SampleIndex,Timestamp,Voltage,EventType,Confidence\n")
-
-                // Data rows
                 sessionData.readings.forEach { reading ->
-                    // Find matching event if exists
                     val event = sessionData.events.find { it.sampleIndex == reading.sampleIndex }
-
                     writer.write(
-                        "${reading.sampleIndex}," +
-                                "${reading.timestamp}," +
-                                "${reading.voltage}," +
-                                "${event?.type ?: ""}," +
-                                "${event?.confidence ?: ""}\n"
+                        "${reading.sampleIndex},${reading.timestamp},${reading.voltage}," +
+                                "${event?.type ?: ""},${event?.confidence ?: ""}\n"
                     )
                 }
             }
 
             Timber.i("CSV exported: ${file.absolutePath}")
             Result.success(file)
-
         } catch (e: Exception) {
             Timber.e(e, "Failed to export CSV")
             Result.failure(e)
         }
     }
+
+    private fun outputFile(name: String): File =
+        File(context.getExternalFilesDir(null), name)
 }

@@ -1,10 +1,11 @@
 package com.ecgmonitor.app.data.models
 
 /**
- * Represents a single ECG data point
- * @param timestamp Time in milliseconds since recording start
- * @param voltage ECG voltage in millivolts (mV)
- * @param sampleIndex Sequential sample number for ordering
+ * A single ECG data point.
+ *
+ * @param timestamp Milliseconds since recording start.
+ * @param voltage ECG voltage in millivolts (mV).
+ * @param sampleIndex Sequential sample number for ordering.
  */
 data class EcgReading(
     val timestamp: Long,
@@ -12,18 +13,16 @@ data class EcgReading(
     val sampleIndex: Int = 0
 )
 
-/**
- * Complete ECG recording session
- */
+/** A complete ECG recording session. */
 data class EcgSession(
     val id: String,
     val patientId: String? = null,
     val startTime: Long,
     val endTime: Long? = null,
-    val samplingRate: Int, // Hz
+    val samplingRate: Int,
     val source: DataSource,
     val totalSamples: Int = 0,
-    val duration: Float = 0f // seconds
+    val duration: Float = 0f
 )
 
 enum class DataSource {
@@ -33,32 +32,27 @@ enum class DataSource {
 }
 
 /**
- * Arrhythmia event marker from BLE InferencePacket.
+ * An arrhythmia event detected by the ESP32 model.
  *
- * Wire protocol (InferencePacket byte 5 = class_id):
- *   0 = Normal
- *   1 = Supraventricular (SVEB / APB)
- *   2 = Ventricular (VEB / PVC)
- *
- * valid = false when the model's confidence was below the per-class
- * threshold on the ESP32. Still displayed but visually de-emphasised.
+ * [valid] is false when the model's confidence fell below the per-class
+ * threshold on-device. Events are still displayed but visually de-emphasised.
  */
 data class ArrhythmiaEvent(
     val timestamp: Long,
     val type: ArrhythmiaType,
-    val confidence: Float,  // 0.0 to 1.0 — softmax score of winning class
+    val confidence: Float,
     val sampleIndex: Int,
-    val valid: Boolean = true,  // false = below confidence threshold on device
+    val valid: Boolean = true,
     val description: String = ""
 )
 
 /**
- * Three output classes matching the ESP32 model (MLCfg::Classification).
+ * The three output classes matching the ESP32 model (MLCfg::Classification).
  *
- * class_id → ArrhythmiaType mapping must stay in sync with config.h:
- *   0 = NORMAL
- *   1 = SUPRAVENTRICULAR
- *   2 = VENTRICULAR
+ * class_id mapping — must stay in sync with firmware config.h:
+ * - 0 → NORMAL
+ * - 1 → SUPRAVENTRICULAR
+ * - 2 → VENTRICULAR
  */
 enum class ArrhythmiaType(
     val classId: Int,
@@ -71,33 +65,31 @@ enum class ArrhythmiaType(
 
     companion object {
         /**
-         * Map the class_id byte from the BLE InferencePacket directly to a type.
-         * Returns NORMAL for any unrecognised id so the app never crashes on a
-         * firmware/app version mismatch.
+         * Maps the class_id byte from a BLE InferencePacket to an [ArrhythmiaType].
+         * Falls back to [NORMAL] on any unrecognised id to handle firmware/app
+         * version mismatches gracefully.
          */
+        @Suppress("unused")
         fun fromClassId(classId: Int): ArrhythmiaType =
             entries.firstOrNull { it.classId == classId } ?: NORMAL
 
         /**
-         * Map raw MIT-BIH annotation symbols to the same 3-class scheme
-         * used during training (mirrors AAMI_CLASSES in preprocess.py).
+         * Maps raw MIT-BIH annotation symbols to the 3-class scheme used during
+         * training (mirrors AAMI_CLASSES in preprocess.py).
          */
+        @Suppress("unused")
         fun fromMitBihAnnotation(annotation: String): ArrhythmiaType =
             when (annotation) {
-                // Normal / non-ectopic
                 "N", "L", "R", "e", "j" -> NORMAL
-                // Supraventricular ectopic
                 "A", "a", "J", "S"      -> SUPRAVENTRICULAR
-                // Ventricular ectopic (F merged into V per training convention)
                 "V", "E", "F"           -> VENTRICULAR
                 else                    -> NORMAL
             }
     }
 }
 
-/**
- * MIT-BIH Database record metadata — unchanged.
- */
+/** MIT-BIH database record metadata. */
+@Suppress("unused")
 data class MitBihRecord(
     val recordNumber: String,
     val patientInfo: String,
