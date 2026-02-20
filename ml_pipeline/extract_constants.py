@@ -80,11 +80,11 @@ def tflite_to_c_array(tflite_path: Path) -> tuple[str, int]:
         lines, line = [], "  "
         for tok in tokens:
             if len(line) + len(tok) + 2 > 80:
-                lines.append(line.rstrip(", "))
+                lines.append(line)  # Keep the trailing comma
                 line = "  "
             line += tok + ", "
         if line.strip():
-            lines.append(line.rstrip(", "))
+            lines.append(line.rstrip(", "))  # Only remove comma from last line
         return "\n".join(lines), n
 
 
