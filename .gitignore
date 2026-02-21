@@ -85,5 +85,10 @@ htmlcov/
 *.bak
 
 # App
-ecg_monitor_app/.gradle/8.13/
+ecg_monitor_app/.gradle/
+ecg_monitor_app/local.properties
+ecg_monitor_app/.idea/
+ecg_monitor_app/build/
+ecg_monitor_app/app/build/
+ecg_monitor_app/**/*.iml
 ecg_monitor_app/app/google-services.json
