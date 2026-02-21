@@ -44,6 +44,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.ecgmonitor.app.EcgMonitorApp
 import com.ecgmonitor.app.data.consent.ConsentManager
 import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.database.entities.AuditAction
@@ -68,15 +69,12 @@ import kotlin.reflect.KClass
 @Composable
 fun NavigationHost() {
     val context = LocalContext.current
-    val consentManager     = remember { ConsentManager(context) }
-    val firebaseRepository = remember { FirebaseRepository() }
-    val syncManager = remember {
-        SyncManager(
-            database           = EcgDatabase.getDatabase(context),
-            firebaseRepository = firebaseRepository,
-            consentManager     = consentManager
-        )
-    }
+    val app = context.applicationContext as EcgMonitorApp
+
+    val consentManager = app.consentManager
+    val firebaseRepository = app.firebaseRepository
+    val syncManager = app.syncManager
+
     val coroutineScope = rememberCoroutineScope()
 
     // null = still checking DB, true = consented, false = needs consent
@@ -86,7 +84,6 @@ fun NavigationHost() {
         consentGranted = consentManager.hasValidConsent()
         if (consentGranted == true) {
             consentManager.log(AuditAction.APP_OPENED)
-            syncManager.initialise()
         }
     }
 
