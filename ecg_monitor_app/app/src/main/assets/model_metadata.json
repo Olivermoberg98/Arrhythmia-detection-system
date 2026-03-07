@@ -1,0 +1,45 @@
+{
+  "version": "1.0.0",
+  "beat_length": 250,
+  "n_rr_features": 3,
+  "sample_rate_hz": 250,
+  "classes": [
+    {
+      "id": 0,
+      "name": "Normal",
+      "color": "#4CAF50"
+    },
+    {
+      "id": 1,
+      "name": "Supraventricular",
+      "color": "#FF9800"
+    },
+    {
+      "id": 2,
+      "name": "Ventricular",
+      "color": "#F44336"
+    }
+  ],
+  "thresholds": [
+    0.23367346938775507,
+    0.05,
+    0.05
+  ],
+  "ecg_scaler": {
+    "mean": -0.0009102606563828886,
+    "std": 0.37038734555244446,
+    "per_position": false
+  },
+  "rr_scaler": {
+    "mean": [
+      1.000003695487976,
+      1.0000030994415283,
+      1.02987539768219
+    ],
+    "std": [
+      0.17120537161827087,
+      0.17120672762393951,
+      0.2655538320541382
+    ]
+  }
+}

@@ -29,7 +29,7 @@ class EcgChartView @JvmOverloads constructor(
         private const val BACKGROUND_COLOR  = 0xFF0A0E1A.toInt()
         private const val TEXT_COLOR        = 0xFF8A9BA8.toInt()
         private const val LINE_WIDTH        = 2f
-        private const val VISIBLE_WINDOW_SECONDS = 10f
+        private const val VISIBLE_WINDOW_SECONDS = 5f
 
         private const val MARKER_NORMAL_COLOR = 0xFF2ED573.toInt()
         private const val MARKER_PVC_COLOR    = 0xFFFF6B6B.toInt()

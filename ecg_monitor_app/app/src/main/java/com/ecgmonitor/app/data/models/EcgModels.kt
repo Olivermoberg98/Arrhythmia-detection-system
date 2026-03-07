@@ -88,6 +88,41 @@ enum class ArrhythmiaType(
     }
 }
 
+/**
+ * Classification result from TFLite model (runs on Android).
+ */
+data class ClassificationResult(
+    val beatNum: Int,
+    val timestampMs: Long,
+    val classId: Int,
+    val className: String,
+    val confidence: Float,
+    val isValid: Boolean,
+    val scores: FloatArray,
+    val inferenceTimeMs: Long = 0
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ClassificationResult) return false
+        return beatNum == other.beatNum &&
+                timestampMs == other.timestampMs &&
+                classId == other.classId &&
+                confidence == other.confidence &&
+                isValid == other.isValid &&
+                scores.contentEquals(other.scores)
+    }
+
+    override fun hashCode(): Int {
+        var result = beatNum
+        result = 31 * result + timestampMs.hashCode()
+        result = 31 * result + classId
+        result = 31 * result + confidence.hashCode()
+        result = 31 * result + isValid.hashCode()
+        result = 31 * result + scores.contentHashCode()
+        return result
+    }
+}
+
 /** MIT-BIH database record metadata. */
 @Suppress("unused")
 data class MitBihRecord(

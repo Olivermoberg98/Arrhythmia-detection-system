@@ -227,6 +227,56 @@ def write_model_config_h(
     out.write_text(text, encoding="utf-8")
     print(f"  model_config.h -> {out}")
 
+def write_mobile_metadata(
+    meta: dict,
+    ecg_mean: np.ndarray,
+    ecg_std: np.ndarray,
+    rr_mean: np.ndarray,
+    rr_std: np.ndarray,
+    thresholds: list[float],
+    out: Path,
+) -> None:
+    """Generate JSON metadata for Android app."""
+    import json
+    
+    class_names = normalise_class_names(meta.get("class_names", ["Normal", "SVEB", "VEB"]))
+    
+    # Color mapping
+    colors = {
+        "Normal": "#4CAF50",           # Green
+        "Supraventricular": "#FF9800", # Orange
+        "SVEB": "#FF9800",             # Orange (alias)
+        "Ventricular": "#F44336",      # Red
+        "VEB": "#F44336"               # Red (alias)
+    }
+    
+    metadata = {
+        "version": "1.0.0",
+        "beat_length": int(meta.get("beat_length", 250)),
+        "n_rr_features": int(meta.get("n_rr_features", 3)),
+        "sample_rate_hz": 250,
+        "classes": [
+            {
+                "id": i,
+                "name": name,
+                "color": colors.get(name, "#9E9E9E")
+            }
+            for i, name in enumerate(class_names)
+        ],
+        "thresholds": [float(t) for t in thresholds],
+        "ecg_scaler": {
+            "mean": float(ecg_mean[0] if len(ecg_mean) == 1 else ecg_mean.mean()),
+            "std": float(ecg_std[0] if len(ecg_std) == 1 else ecg_std.mean()),
+            "per_position": len(ecg_mean) > 1
+        },
+        "rr_scaler": {
+            "mean": rr_mean.tolist(),
+            "std": rr_std.tolist()
+        }
+    }
+    
+    out.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(f"  model_metadata.json -> {out}")
 
 # --------------------------------------------------------------------------- #
 # Main
@@ -333,6 +383,12 @@ def main():
     write_model_config_h(
         meta, ecg_mean, ecg_std, rr_mean, rr_std, thresholds,
         Path(args.out_cfg)
+    )
+
+    print("Generating model_metadata.json for Android...")
+    write_mobile_metadata(
+        meta, ecg_mean, ecg_std, rr_mean, rr_std, thresholds,
+        Path(args.out_cfg).parent / "model_metadata.json"
     )
 
     print("\nAll done ✓")

@@ -27,16 +27,15 @@ namespace SamplingCfg {
     constexpr size_t ECG_BLE_BUFFER_SIZE = 50;
 
     // ── Beat segmentation ──────────────────────────────────────
-    // 187 samples before R-peak + 63 after = 250 samples total @ 250 Hz.
-    constexpr size_t BEAT_PRE_SAMPLES    = 187;
-    constexpr size_t BEAT_POST_SAMPLES   = 63;
-    constexpr size_t BEAT_WINDOW_SAMPLES = BEAT_PRE_SAMPLES + BEAT_POST_SAMPLES; // 250
+    constexpr size_t BEAT_PRE_SAMPLES    = 96;
+    constexpr size_t BEAT_POST_SAMPLES   = 32;
+    constexpr size_t BEAT_WINDOW_SAMPLES = BEAT_PRE_SAMPLES + BEAT_POST_SAMPLES; // 128
 
     // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
     constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
 
     // Aliases kept for SignalProcessor / main.cpp compatibility.
-    constexpr size_t ML_WINDOW_SAMPLES  = BEAT_WINDOW_SAMPLES; // 250
+    constexpr size_t ML_WINDOW_SAMPLES  = BEAT_WINDOW_SAMPLES; // 128
     constexpr size_t ML_STRIDE_SAMPLES  = BEAT_WINDOW_SAMPLES; // fire on each beat
 
     constexpr size_t SERIAL_BUFFER_SIZE = 512;
@@ -112,48 +111,18 @@ namespace MLCfg {
 namespace BLECfg {
     // ---- GATT UUIDs -------------------------------------------
     constexpr const char* SERVICE_UUID        = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-
-    // Notify: ECG + PPG stream packets  (see DataPacket below)
     constexpr const char* CHAR_STREAM_UUID    = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-
-    // Notify: Arrhythmia inference results (see InferencePacket below)
-    constexpr const char* CHAR_INFER_UUID     = "beb5483f-36e1-4688-b7f5-ea07361b26a8";
-
-    // Read/Write: device status & configuration
+    constexpr const char* CHAR_BEAT_UUID      = "beb5483f-36e1-4688-b7f5-ea07361b26a8";
     constexpr const char* CHAR_CONFIG_UUID    = "beb54840-36e1-4688-b7f5-ea07361b26a8";
 
     // ---- Timing -----------------------------------------------
-    // BLE connection interval (multiples of 1.25 ms).
-    // 32 = 40 ms.  At 250 Hz ECG, 10 samples accumulate in 40 ms.
     constexpr uint16_t CONN_INTERVAL_MIN = 24;   // 30 ms
     constexpr uint16_t CONN_INTERVAL_MAX = 32;   // 40 ms
-
     constexpr uint16_t ADV_INTERVAL_MIN = 160;  // 100 ms  (160 × 0.625 ms)
     constexpr uint16_t ADV_INTERVAL_MAX = 320;  // 200 ms  (320 × 0.625 ms)
 
     // ---- Device name ------------------------------------------
     constexpr const char* DEVICE_NAME = "EcgMon";
-
-    // ===========================================================
-    // Wire Protocol
-    // ===========================================================
-    //
-    // STREAM CHARACTERISTIC  –  DataPacket  (26 bytes)
-    // ┌─────────┬──────────────────────┬──────────────────────────────────────────┐
-    // │ Byte(s) │ Field                │ Description                              │
-    // ├─────────┼──────────────────────┼──────────────────────────────────────────┤
-    // │   0     │ seq_num   (uint8)    │ Rolling 0-255 counter, detect packet loss│
-    // │  1-4    │ timestamp (uint32LE) │ millis() at first sample in this batch   │
-    // │   5     │ lead_off  (uint8)    │ Bit-0 = LO+, Bit-1 = LO-. 0 = OK        │
-    // │  6-25   │ ecg[10]   (int16LE) │ Filtered ECG samples (raw – ADC_MIDPOINT)│
-    // └─────────┴──────────────────────┴──────────────────────────────────────────┘
-    //
-    // Effective ECG rate on the app side: 10 samples / 40 ms = 250 Hz.
-    // Render each sample 4 ms apart for correct waveform scaling.
-    //
-    // class_id meaning (InferencePacket byte 5):
-    //   Was: 0=Normal, 1=AFib, 2=Brady, 3=Tachy, 4=Other
-    //   Now: 0=Normal, 1=Supraventricular (SVEB), 2=Ventricular (VEB)
 
     #pragma pack(push, 1)
     struct DataPacket {
@@ -163,12 +132,14 @@ namespace BLECfg {
         int16_t  ecg[10];         // BLE_ECG_BATCH_SIZE filtered samples
     };
 
-    struct InferencePacket {
-        uint8_t  marker;          // 0xFF
-        uint32_t timestamp_ms;
-        uint8_t  class_id;
-        float    confidence;
+    struct BeatPacket {
+        uint8_t  marker;          // 0xBE (Beat marker)
+        uint32_t timestamp_ms;    // R-peak timestamp
+        uint16_t beat_num;        // Rolling beat counter
+        int16_t    ecg[128];      // Full filtered beat window
+        float    rr_features[3];  // [pre_rr_norm, post_rr_norm, ratio]
     };
+    // Size: 1 + 4 + 2 + 256 + 12 = 275 
     #pragma pack(pop)
 }
 

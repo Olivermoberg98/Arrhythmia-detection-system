@@ -2,29 +2,23 @@
 #include "config.h"
 #include "sensors/ecg/ECGSensor.h"
 #include "signal_processing/SignalProcessor.h"
-#include "ml/Inference.h"
 #include "ble/BLEManager.h"
 
 // ============================================================
 // Module instances
 // ============================================================
-static ECGSensor      ecg;
+static ECGSensor       ecg;
 static SignalProcessor processor;
-static Inference      inference;
-static BLEManager     ble;
+static BLEManager      ble;
 
 // ============================================================
 // Shared state
 // ============================================================
-static volatile uint8_t s_bleSeqNum = 0;
-
-// Beat + RR buffers — filled by SignalProcessor, consumed by Inference.
-// Sized at compile time from config.h constants.
-static float s_beatBuf[SamplingCfg::BEAT_WINDOW_SAMPLES];
-static float s_rrBuf[MLCfg::N_RR_FEATURES];
+static volatile uint8_t  s_bleSeqNum = 0;
+static volatile uint16_t s_beatNum   = 0;
 
 // ============================================================
-// Sensor Task  (Core 1 — sampling + signal processing)
+// Sensor Task
 // ============================================================
 static void sensorTask(void* /*param*/) {
 #if ENABLE_SERIAL_CAPTURE
@@ -43,12 +37,9 @@ static void sensorTask(void* /*param*/) {
             int16_t raw = 0;
             if (ecg.popSamples(&raw, 1) == 0) break;
 
-            // Lead-off detection.
             const bool leadOff = !ecg.leadsOn() || (raw == INT16_MIN);
 
             if (leadOff) {
-                // Reset filter + detector state on lead disconnect.
-                // The R-peak detector will re-adapt within a few beats.
                 processor.reset();
             }
 
@@ -60,20 +51,20 @@ static void sensorTask(void* /*param*/) {
                 sampleToSend   = static_cast<int16_t>(filtered);
             }
 
-#if ENABLE_SERIAL_CAPTURE
-            Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
-#endif
+// #if ENABLE_SERIAL_CAPTURE
+//             Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
+// #endif
 
             ecgBatch[batchCount++] = sampleToSend;
 
-            // Send BLE packet once a full batch is ready.
+            // Send BLE stream packet
             if (batchCount == SamplingCfg::BLE_ECG_BATCH_SIZE) {
                 BLECfg::DataPacket pkt = {};
                 pkt.seq_num      = s_bleSeqNum++;
                 pkt.timestamp_ms = now;
                 uint8_t loPlus  = digitalRead(Pins::ECG_LO_PLUS)  ? 0x01 : 0x00;
                 uint8_t loMinus = digitalRead(Pins::ECG_LO_MINUS) ? 0x02 : 0x00;
-                pkt.lead_off = loPlus | loMinus;  // 0x00 = both leads on
+                pkt.lead_off = loPlus | loMinus;
 
                 memcpy(pkt.ecg, ecgBatch,
                        sizeof(int16_t) * SamplingCfg::BLE_ECG_BATCH_SIZE);
@@ -82,32 +73,33 @@ static void sensorTask(void* /*param*/) {
                 batchCount = 0;
             }
 
-            // -- ML inference (triggered once per detected beat) -----------
-            // isBeatReady() is only true for exactly one processSample()
-            // call after a complete 250-sample beat window is captured.
+            // ── Send beat window when ready ──────────────────────────────────────
             if (!leadOff && processor.isBeatReady()) {
-                processor.getBeat(s_beatBuf);       // raw filtered ECG window
-                processor.getRRFeatures(s_rrBuf);   // [pre_rr_norm, post_rr_norm, ratio_rr]
-
-                if (inference.runInference(s_beatBuf, s_rrBuf)) {
-                    InferenceResult r = inference.getResult();
-
-                    // Always send the BLE inference packet so the app can
-                    // display all beats; valid=false ones can be shown dimmed.
-                    BLECfg::InferencePacket ipkt = {};
-                    ipkt.marker       = 0xFF;
-                    ipkt.timestamp_ms = millis();
-                    ipkt.class_id     = static_cast<uint8_t>(r.classification);
-                    ipkt.confidence   = r.confidence;
-                    ble.sendInference(ipkt);
+                BLECfg::BeatPacket beatPkt = {};
+                beatPkt.marker       = 0xBE;
+                beatPkt.timestamp_ms = millis();
+                beatPkt.beat_num     = s_beatNum++;
+                
+                // Get beat window (250 samples)
+                float beatFloat[250];
+                processor.getBeat(beatFloat);
+                for (int i = 0; i < 250; i++) {
+                    beatPkt.ecg[i] = static_cast<int16_t>(beatFloat[i]);
+                }
+                
+                // Get RR features (3 values)
+                processor.getRRFeatures(beatPkt.rr_features);
+                
+                ble.sendBeat(beatPkt);
 
 #if ENABLE_SERIAL_CAPTURE
-                    Serial.printf("[BEAT] class=%u conf=%.2f valid=%d"
-                                  " pre_rr=%.3f post_rr=%.3f ratio=%.3f\n",
-                                  ipkt.class_id, ipkt.confidence, (int)r.valid,
-                                  s_rrBuf[0], s_rrBuf[1], s_rrBuf[2]);
+                Serial.printf("[BEAT_SENT] num=%u ts=%lu rr=[%.3f,%.3f,%.3f]\n",
+                              beatPkt.beat_num,
+                              beatPkt.timestamp_ms,
+                              beatPkt.rr_features[0],
+                              beatPkt.rr_features[1],
+                              beatPkt.rr_features[2]);
 #endif
-                }
             }
         }
 
@@ -122,30 +114,43 @@ void setup() {
 #if ENABLE_SERIAL_CAPTURE
     Serial.begin(SerialCfg::BAUD_RATE);
     while (!Serial) { delay(10); }
+    Serial.println("[INIT] Starting ECG Monitor v2.0");
 #endif
 
     if (!ecg.begin()) {
+#if ENABLE_SERIAL_CAPTURE
+        Serial.println("[ERROR] ECG sensor init failed");
+#endif
         while (true) { delay(1000); }
     }
-
-    if (!inference.begin()) {
-        // Model failed to load — continue without ML.
-        // BLE stream will still work; inference packets simply won't be sent.
-    }
+#if ENABLE_SERIAL_CAPTURE
+    Serial.println("[OK] ECG sensor initialized");
+#endif
 
     if (!ble.begin()) {
+#if ENABLE_SERIAL_CAPTURE
+        Serial.println("[ERROR] BLE init failed");
+#endif
         while (true) { delay(1000); }
     }
+#if ENABLE_SERIAL_CAPTURE
+    Serial.println("[OK] BLE initialized");
+#endif
 
+    // Single task
     xTaskCreatePinnedToCore(
         sensorTask,
         "SensorTask",
-        SENSOR_TASK_STACK,
+        4096,
         nullptr,
-        /*priority=*/ 5,
+        5,
         nullptr,
-        /*core=*/     1
+        1
     );
+
+#if ENABLE_SERIAL_CAPTURE
+    Serial.println("[OK] Sensor task started");
+#endif
 }
 
 void loop() {

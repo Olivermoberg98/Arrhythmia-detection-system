@@ -6,38 +6,36 @@ BLEManager::BLEManager() {}
 
 bool BLEManager::begin() {
     NimBLEDevice::init(BLECfg::DEVICE_NAME);
-    NimBLEDevice::setMTU(185);
-    NimBLEDevice::setPower(9);   // Max TX power (dBm)
+    NimBLEDevice::setMTU(512);
+    NimBLEDevice::setPower(9);
 
     _server = NimBLEDevice::createServer();
     _server->setCallbacks(this);
 
-    // ---- GATT Service ----
     NimBLEService* service = _server->createService(BLECfg::SERVICE_UUID);
 
-    // ---- Stream characteristic (ECG only, notify) ----
+    // Stream characteristic (existing)
     _charStream = service->createCharacteristic(
         BLECfg::CHAR_STREAM_UUID,
         NIMBLE_PROPERTY::NOTIFY
     );
 
-    // ---- Inference result characteristic (notify) ----
-    _charInference = service->createCharacteristic(
-        BLECfg::CHAR_INFER_UUID,
+    // Beat characteristic (NEW)
+    _charBeat = service->createCharacteristic(
+        BLECfg::CHAR_BEAT_UUID,
         NIMBLE_PROPERTY::NOTIFY
     );
 
-    // ---- Config / status characteristic (read + write) ----
+    // Config characteristic (existing)
     _charConfig = service->createCharacteristic(
         BLECfg::CHAR_CONFIG_UUID,
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE
     );
-    uint8_t fwVersion = 0x01;
+    uint8_t fwVersion = 0x02;  // Version 2.0
     _charConfig->setValue(&fwVersion, 1);
 
     service->start();
 
-    // ---- Advertising ----
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->addServiceUUID(BLECfg::SERVICE_UUID);
     adv->setName(BLECfg::DEVICE_NAME);
@@ -48,7 +46,6 @@ bool BLEManager::begin() {
     return true;
 }
 
-// -------------------------------------------------------------------
 void BLEManager::sendStream(const BLECfg::DataPacket& pkt) {
     if (!_connected.load(std::memory_order_relaxed)) return;
 
@@ -59,30 +56,27 @@ void BLEManager::sendStream(const BLECfg::DataPacket& pkt) {
     _charStream->notify();
 }
 
-void BLEManager::sendInference(const BLECfg::InferencePacket& pkt) {
+// NEW: Send beat window
+void BLEManager::sendBeat(const BLECfg::BeatPacket& pkt) {
     if (!_connected.load(std::memory_order_relaxed)) return;
 
-    _charInference->setValue(
+    _charBeat->setValue(
         reinterpret_cast<const uint8_t*>(&pkt),
-        sizeof(BLECfg::InferencePacket)
+        sizeof(BLECfg::BeatPacket)
     );
-    _charInference->notify();
+    _charBeat->notify();
 }
 
-// -------------------------------------------------------------------
-// NimBLE 2.x callback signatures
-// -------------------------------------------------------------------
 void BLEManager::onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) {
     _connHandle = connInfo.getConnHandle();
     _connected.store(true, std::memory_order_release);
 
-    // Request tighter connection interval (30-40 ms) for ECG streaming
     pServer->updateConnParams(
         _connHandle,
         BLECfg::CONN_INTERVAL_MIN,
         BLECfg::CONN_INTERVAL_MAX,
-        /*latency=*/  0,
-        /*timeout=*/  400   // 4 s supervision timeout
+        0,
+        400
     );
 }
 
@@ -91,7 +85,5 @@ void BLEManager::onDisconnect(NimBLEServer* pServer,
                                int reason) {
     _connected.store(false, std::memory_order_release);
     _connHandle = 0xFFFF;
-
-    // Restart advertising so a new connection can be made
     NimBLEDevice::getAdvertising()->start();
 }
