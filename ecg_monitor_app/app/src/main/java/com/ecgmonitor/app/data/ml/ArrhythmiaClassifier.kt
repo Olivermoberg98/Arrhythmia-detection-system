@@ -77,9 +77,8 @@ class ArrhythmiaClassifier(context: Context) {
         val startTime = System.currentTimeMillis()
 
         // Convert int16 ECG to float32
-        val ecgFloat = FloatArray(250) { i ->
-            if (i < 128) beatWindow.ecgSamples[i].toFloat()
-            else 0f  // Zero-pad to 250
+        val ecgFloat = FloatArray(beatWindow.ecgSamples.size) { i ->
+            beatWindow.ecgSamples[i].toFloat()
         }
 
         // Normalize inputs

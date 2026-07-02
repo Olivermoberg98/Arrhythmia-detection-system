@@ -142,9 +142,9 @@ RESAMPLE_DOWN = ORIGINAL_FS // _GCD   # 36
 # 187 samples before R-peak = 748 ms  (more P-wave context for SVEB detection)
 #  63 samples after  R-peak = 252 ms  (enough for full T-wave)
 # Total = 250 samples = 1.000 s
-WINDOW_SIZE_BEFORE = 187
-WINDOW_SIZE_AFTER  =  63
-BEAT_LENGTH        = WINDOW_SIZE_BEFORE + WINDOW_SIZE_AFTER   # 250
+WINDOW_SIZE_BEFORE = 96
+WINDOW_SIZE_AFTER  = 32
+BEAT_LENGTH        = WINDOW_SIZE_BEFORE + WINDOW_SIZE_AFTER   # 128
 
 # Number of RR interval features appended to each beat
 N_RR_FEATURES = 3   # pre_rr_norm, post_rr_norm, ratio_rr
