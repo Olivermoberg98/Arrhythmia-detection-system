@@ -1,0 +1,82 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project overview
+
+`ecg_monitor_app` (applicationId `com.ecgmonitor.app`) is the Android companion app for an ECG/PPG arrhythmia-monitoring device (ESP32-S3 + AD8232 + MAX30102). It pairs over BLE, streams ECG samples and per-heartbeat "beat window" packets, runs on-device arrhythmia classification with TensorFlow Lite, stores sessions locally in Room, and optionally syncs session metadata (not raw waveforms) to Firebase Firestore under anonymous auth. It's an educational project, not a certified medical device (per the monorepo root README).
+
+This module lives inside the larger `Arrhythmia-detection-system` monorepo, alongside `arrhythmia_system_controller/` (ESP32 firmware) and `ml_pipeline/` (Python model training) — this CLAUDE.md only covers `ecg_monitor_app/`.
+
+- Kotlin 2.0.20, AGP 8.9.1, Gradle 8.13, KSP 2.0.20-1.0.25
+- compileSdk 36, targetSdk 34, minSdk 26
+- Single Gradle module (`:app`), no product flavors
+- UI is 100% Jetpack Compose (Material 3) — no XML layouts
+
+## Build & run commands
+
+Run from `ecg_monitor_app/`:
+
+```
+.\gradlew.bat assembleDebug          # debug build
+.\gradlew.bat assembleRelease        # release build (minify disabled, uses proguard-rules.pro)
+.\gradlew.bat installDebug           # install debug build on connected device/emulator
+.\gradlew.bat test                   # JVM unit tests
+.\gradlew.bat connectedAndroidTest   # instrumented tests (needs device/emulator)
+.\gradlew.bat lint                   # standard Android Lint (no custom ruleset configured)
+.\gradlew.bat detekt                 # Kotlin static analysis (default ruleset, baselined against pre-existing findings)
+```
+
+Building requires `app/google-services.json` locally (gitignored, not in the repo) — Firebase features won't build without it.
+
+## Architecture
+
+MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories directly):
+
+- **Screens (Compose)** — `app/src/main/java/com/ecgmonitor/app/ui/screens/` (`LiveMonitorScreen`, `HistoryScreen`, `SessionDetailScreen`, `SettingsScreen`, `ConsentScreen`)
+- **ViewModels** — `app/src/main/java/com/ecgmonitor/app/ui/viewmodels/`, all extend `AndroidViewModel`, expose state via `StateFlow`
+- **Repositories** — `app/src/main/java/com/ecgmonitor/app/data/repository/EcgRepository.kt`, `data/consent/ConsentManager.kt`
+- **Room DB** — `app/src/main/java/com/ecgmonitor/app/data/database/` (`EcgDatabase.kt` is at version 2 with explicit `Migration` objects — bump the version and add a migration, don't rely on destructive fallback in release)
+- **BLE** — `app/src/main/java/com/ecgmonitor/app/data/ble/BleManager.kt`, built on **Kable** (`com.juul.kable`)
+- **ML inference** — `app/src/main/java/com/ecgmonitor/app/data/ml/ArrhythmiaClassifier.kt`, loads `assets/arrhythmia_model.tflite` + `assets/model_metadata.json`
+- **Firebase sync** — `app/src/main/java/com/ecgmonitor/app/data/firebase/FirebaseRepository.kt`, `SyncManager.kt`
+- **Navigation** — `app/src/main/java/com/ecgmonitor/app/navigation/NavigationHost.kt` gates every screen behind `ConsentManager.hasValidConsent()`
+
+**DI is manual, not a framework.** `EcgMonitorApp` (`Application` subclass) constructs app-scoped singletons (`bleManager`, `syncManager`, `consentManager`, `firebaseRepository`) as public `lateinit var`s in `onCreate()`. ViewModels reach them via `(application as EcgMonitorApp).bleManager`, and construct their own repository/classifier instances directly in field initializers.
+
+## Module ownership / don't-touch boundaries
+
+- **`app/src/main/assets/arrhythmia_model.tflite` and `model_metadata.json`** — trained by the separate `ml_pipeline/` (Python) and checked in as generated artifacts. Don't hand-edit; regenerate via that pipeline.
+- **`app/google-services.json`** — gitignored, supplied locally per environment. Never commit it.
+- **`docs/regulatory/`** (monorepo root, one level up) — an IEC 62304/GDPR/MDR-style documentation set (`SAD-001` architecture, `SRS-001` requirements, `RMF-001` risk file, etc.) that describes this app's consent flow, data handling, and architecture. Ask before editing these; if you change consent, data retention, BLE protocol, or classifier behavior, flag that these docs may need a matching update.
+- **`mitbih_100.json` / `mitbih_203.json`** (`app/src/main/assets/mitbih/`) — fixed reference/demo recordings loaded by `MitBihDataLoader.kt`; don't regenerate casually.
+- **`rxandroidble3`/`rxjava`/`rxandroid` dependencies** in `app/build.gradle.kts` appear unused — the actual BLE stack is Kable. Don't build new BLE code on the Rx libs without confirming they're actually meant to be used.
+- **`viewBinding = true`** is enabled in `buildFeatures` but no `res/layout/` exists — vestigial. Don't add XML layouts without discussing first (see Conventions: UI is Compose-only).
+
+## Conventions
+
+- **UI is Compose-only.** No XML layouts exist; keep new screens in Compose. The one exception is `ui/components/EcgChartView.kt` / `EcgChartComposable.kt`, which wrap the classic View-based MPAndroidChart via `AndroidView` — follow that existing pattern if a chart needs MPAndroidChart specifically.
+- **No domain/UseCase layer.** Business logic lives in repositories, called directly from ViewModels — don't introduce a new architectural layer without discussion.
+- **No DI framework** (no Hilt/Koin/Dagger). New app-scoped dependencies go through `EcgMonitorApp`'s manual singleton wiring, matching the existing `bleManager`/`syncManager`/`consentManager`/`firebaseRepository` pattern.
+- **Streaming data uses `MutableSharedFlow` with a bounded buffer and `DROP_OLDEST`** (see `BleManager.kt`, 64-slot buffer) for packet-loss tolerance — follow this pattern for new streaming sources rather than an unbounded channel.
+- **Firebase sync uploads metadata only** (session stats + arrhythmia events, batched 500/batch) — raw waveform samples intentionally stay local-only in Room to stay free-tier compatible. Preserve this split when touching sync code.
+- **Commit message style** observed in git log: `Update (Scope): Description`, e.g. `Update (App): Fix the data base storage via Firebase`, `Update (ESP): ...` — scope is typically `App`, `ESP`, or the changed area.
+- **No test coverage exists** beyond the default `ExampleUnitTest.kt` / `ExampleInstrumentedTest.kt` templates — don't assume repositories, ViewModels, BLE parsing, or the classifier are under test (see TODO below).
+- **No ktlint/.editorconfig** — match the surrounding file's style manually; there's no automated formatter to defer to. **detekt** is configured (default ruleset, `app/detekt-baseline.xml` suppresses pre-existing findings) — new code should pass `.\gradlew.bat detekt` cleanly; don't add to the baseline to silence a new finding, fix it or ask.
+
+## My working preferences
+
+- Keep responses concise, no unnecessary explanation.
+- Prefer minimal diffs — don't refactor or reformat code beyond what's asked.
+- Never create new files unless explicitly requested.
+- Ask before adding new dependencies.
+
+## TODO
+
+- **Add real test coverage, prioritizing `BleManager.parseStreamPacket`** before refactoring it. It's the one flagged complexity issue worth taking seriously (`CyclomaticComplexMethod`, complexity 15, see `app/detekt-baseline.xml`), and BLE parsing + the classifier currently have zero tests — don't attempt to simplify either without tests to catch regressions first.
+
+## Open questions
+
+- Whether `rxandroidble3`/`rxjava`/`rxandroid` and the `viewBinding` flag are genuinely dead, or held over for planned work — couldn't confirm intent from the code alone.
+- No documented branch/PR workflow was found; git log shows direct commits, so it's unclear if a branching strategy is expected going forward.
+- Whether `docs/regulatory/` is meant to be kept strictly in sync with code changes (as IEC 62304-style docs normally would be) or is a best-effort/aspirational artifact — the root README itself is stale in places (describes a "Flutter/React Native" mobile app that doesn't match this native Kotlin/Compose implementation).

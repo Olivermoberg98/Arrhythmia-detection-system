@@ -26,6 +26,7 @@ timber = "5.0.1"
 firebaseBom = "33.7.0"
 tensorflow = "2.14.0"
 tensorflowSupport = "0.4.4"
+detekt = "1.23.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -74,3 +75,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 serialization-json = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "serialization" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

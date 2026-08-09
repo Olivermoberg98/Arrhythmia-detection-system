@@ -1,0 +1,206 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
+    <ID>FunctionNaming:CloudSyncCard.kt$@Composable fun CloudSyncCard(firebaseRepository: FirebaseRepository)</ID>
+    <ID>FunctionNaming:ConsentScreen.kt$@Composable fun ConsentScreen( onAccept: () -&gt; Unit, onDecline: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:ConsentScreen.kt$@Composable private fun ConsentSection(icon: ImageVector, title: String, body: String)</ID>
+    <ID>FunctionNaming:EcgChartComposable.kt$@Composable fun EcgChart( ecgReadings: List&lt;EcgReading&gt;, arrhythmiaEvents: List&lt;ArrhythmiaEvent&gt; = emptyList(), samplingRate: Int = 250, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun ArrhythmiaChip(label: String, count: Int, color: Color)</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun EmptyHistoryState(modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun HealthStatusBadge(status: HealthStatus)</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun SessionCard( session: EcgSessionEntity, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun StatItem(label: String, value: String, unit: String, color: Color)</ID>
+    <ID>FunctionNaming:HistoryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun HistoryScreen( viewModel: HistoryViewModel, onSessionClick: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun ConnectionStatusBanner(connectionState: ConnectionState)</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun LeadsStatusIndicator(leadsOff: Boolean, isStreaming: Boolean)</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun RecordingControls( isConnected: Boolean, isRecording: Boolean, onStartRecording: () -&gt; Unit, onStopRecording: () -&gt; Unit, onClearData: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun RecordingIndicator()</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun StatusMessage(message: String, isError: Boolean)</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun VitalSignsCard( heartRate: Int, isStreaming: Boolean, isRecording: Boolean, leadsOff: Boolean, recordingDuration: Long )</ID>
+    <ID>FunctionNaming:LiveMonitorScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LiveMonitorScreen( viewModel: LiveMonitorViewModel, onRecordingSaved: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:NavigationHost.kt$@Composable fun NavigationHost()</ID>
+    <ID>FunctionNaming:NavigationHost.kt$@Composable private fun MainAppNavigation( consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun BeatStat(label: String, count: Int, color: Color)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun EventTimelineItem(event: ArrhythmiaEvent, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun EventTimelineSection( events: List&lt;ArrhythmiaEvent&gt;, currentFilter: EventFilter, onFilterClick: () -&gt; Unit, onEventClick: (ArrhythmiaEvent) -&gt; Unit, modifier: Modifier = Modifier, showFilterMenu: Boolean, onFilterMenuDismiss: () -&gt; Unit, onFilterSelect: (EventFilter) -&gt; Unit )</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun ExportStatusCard(message: String, isSuccess: Boolean, onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun HealthAssessment(session: EcgSessionEntity)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun HealthStatusBadge(status: HealthStatus)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun PlaybackControls( playbackState: PlaybackState, playbackProgress: Float, onPlayPause: () -&gt; Unit, onStop: () -&gt; Unit, onSeek: (Float) -&gt; Unit )</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun StatColumn(label: String, value: String, unit: String, color: Color)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun StatisticsSection(session: EcgSessionEntity, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SessionDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SessionDetailScreen( sessionId: String, viewModel: SessionDetailViewModel, onBack: () -&gt; Unit, onDelete: (String) -&gt; Unit = {} )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun DataPrivacyCard(consentManager: ConsentManager, syncManager: SyncManager)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun ConnectionStatusCard(connectionState: ConnectionState, onDisconnect: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun DeviceItem( device: BleDevice, isConnected: Boolean, isConnecting: Boolean, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun PermissionCard( permanentlyDenied: Boolean, onRequest: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun SettingRow(label: String, value: String)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
+    <ID>FunctionNaming:Theme.kt$@Composable fun EcgMonitorTheme( content: @Composable () -&gt; Unit )</ID>
+    <ID>LongMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
+    <ID>LongMethod:BleManager.kt$BleManager$suspend fun connect(device: BleDevice)</ID>
+    <ID>LongMethod:CloudSyncCard.kt$@Composable fun CloudSyncCard(firebaseRepository: FirebaseRepository)</ID>
+    <ID>LongMethod:ConsentScreen.kt$@Composable fun ConsentScreen( onAccept: () -&gt; Unit, onDecline: () -&gt; Unit )</ID>
+    <ID>LongMethod:HistoryScreen.kt$@Composable private fun SessionCard( session: EcgSessionEntity, onClick: () -&gt; Unit )</ID>
+    <ID>LongMethod:HistoryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun HistoryScreen( viewModel: HistoryViewModel, onSessionClick: (String) -&gt; Unit )</ID>
+    <ID>LongMethod:LiveMonitorScreen.kt$@Composable private fun VitalSignsCard( heartRate: Int, isStreaming: Boolean, isRecording: Boolean, leadsOff: Boolean, recordingDuration: Long )</ID>
+    <ID>LongMethod:LiveMonitorScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LiveMonitorScreen( viewModel: LiveMonitorViewModel, onRecordingSaved: (String) -&gt; Unit )</ID>
+    <ID>LongMethod:NavigationHost.kt$@Composable fun NavigationHost()</ID>
+    <ID>LongMethod:NavigationHost.kt$@Composable private fun MainAppNavigation( consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
+    <ID>LongMethod:SessionDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SessionDetailScreen( sessionId: String, viewModel: SessionDetailViewModel, onBack: () -&gt; Unit, onDelete: (String) -&gt; Unit = {} )</ID>
+    <ID>LongMethod:SettingsScreen.kt$@Composable fun DataPrivacyCard(consentManager: ConsentManager, syncManager: SyncManager)</ID>
+    <ID>LongMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
+    <ID>LongParameterList:SessionDetailScreen.kt$( events: List&lt;ArrhythmiaEvent&gt;, currentFilter: EventFilter, onFilterClick: () -&gt; Unit, onEventClick: (ArrhythmiaEvent) -&gt; Unit, modifier: Modifier = Modifier, showFilterMenu: Boolean, onFilterMenuDismiss: () -&gt; Unit, onFilterSelect: (EventFilter) -&gt; Unit )</ID>
+    <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$100</ID>
+    <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$1e-6f</ID>
+    <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$4</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$0xFF</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$0xFFFF</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$0xFFFFFFFFL</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$16</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$20</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$256</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$5</ID>
+    <ID>MagicNumber:BleManager.kt$BleManager$6</ID>
+    <ID>MagicNumber:CloudSyncCard.kt$8</ID>
+    <ID>MagicNumber:Color.kt$0xFF00D9FF</ID>
+    <ID>MagicNumber:Color.kt$0xFF00FF41</ID>
+    <ID>MagicNumber:Color.kt$0xFF0A0E1A</ID>
+    <ID>MagicNumber:Color.kt$0xFF141B28</ID>
+    <ID>MagicNumber:Color.kt$0xFF1A2332</ID>
+    <ID>MagicNumber:Color.kt$0xFF2A3644</ID>
+    <ID>MagicNumber:Color.kt$0xFF2ED573</ID>
+    <ID>MagicNumber:Color.kt$0xFF5F6C7B</ID>
+    <ID>MagicNumber:Color.kt$0xFF8A9BA8</ID>
+    <ID>MagicNumber:Color.kt$0xFFFF4757</ID>
+    <ID>MagicNumber:Color.kt$0xFFFFA502</ID>
+    <ID>MagicNumber:Color.kt$0xFFFFFFFF</ID>
+    <ID>MagicNumber:ConsentScreen.kt$10</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$0.5f</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$10f</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$24f</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$250</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$300</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$30f</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$3f</ID>
+    <ID>MagicNumber:EcgChartView.kt$EcgChartView$5f</ID>
+    <ID>MagicNumber:EcgModels.kt$ArrhythmiaType.NORMAL$0xFF2ED573</ID>
+    <ID>MagicNumber:EcgModels.kt$ArrhythmiaType.SUPRAVENTRICULAR$0xFFFFA502</ID>
+    <ID>MagicNumber:EcgModels.kt$ArrhythmiaType.VENTRICULAR$0xFFFF4757</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$10</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$100</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$20</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$200</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$40</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$50</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$60000.0</ID>
+    <ID>MagicNumber:EcgRepository.kt$EcgRepository$70</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$12f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$16f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$200</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$20f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$495f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$4f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$50f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$595</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$80f</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$842</ID>
+    <ID>MagicNumber:ExportManager.kt$ExportManager$8f</ID>
+    <ID>MagicNumber:FirebaseRepository.kt$FirebaseRepository$500</ID>
+    <ID>MagicNumber:HistoryScreen.kt$60</ID>
+    <ID>MagicNumber:HistoryViewModel.kt$HistoryViewModel$5000</ID>
+    <ID>MagicNumber:LiveMonitorScreen.kt$0.6f</ID>
+    <ID>MagicNumber:LiveMonitorScreen.kt$1.5f</ID>
+    <ID>MagicNumber:LiveMonitorScreen.kt$1_000L</ID>
+    <ID>MagicNumber:LiveMonitorScreen.kt$60</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$100</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$1_000f</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$250</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$250f</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$30</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$30f</ID>
+    <ID>MagicNumber:LiveMonitorViewModel.kt$LiveMonitorViewModel$60_000.0</ID>
+    <ID>MagicNumber:SessionDetailScreen.kt$0.5f</ID>
+    <ID>MagicNumber:SessionDetailScreen.kt$1000</ID>
+    <ID>MagicNumber:SessionDetailScreen.kt$4f</ID>
+    <ID>MagicNumber:SessionDetailScreen.kt$60</ID>
+    <ID>MagicNumber:SessionDetailViewModel.kt$SessionDetailViewModel$1000L</ID>
+    <ID>MagicNumber:SessionDetailViewModel.kt$SessionDetailViewModel$250</ID>
+    <ID>MaxLineLength:ConsentScreen.kt$body = "All data is stored locally on this device only. It is not transmitted to any server, cloud service, or third party. Data remains on your device until you delete it. Uninstalling the app permanently deletes all stored data."</ID>
+    <ID>MaxLineLength:ConsentScreen.kt$body = "This app is intended for personal health monitoring and informational purposes only. It is not a medical device cleared for clinical diagnosis. Results should not be used as a substitute for professional medical advice, diagnosis, or treatment. If you experience cardiac symptoms, seek medical attention immediately. The health status indicators (Normal / Attention / Concerning) are informational aids, not clinical diagnoses."</ID>
+    <ID>MaxLineLength:ConsentScreen.kt$body = "This app records ECG (electrocardiogram) electrical signals from your body via the connected sensor. Each recording stores: the raw ECG waveform, session timestamps, duration, automatically detected arrhythmia events, and derived statistics (heart rate, beat classification). No other personal information is collected. Your name, location, and contact details are never stored."</ID>
+    <ID>MaxLineLength:ConsentScreen.kt$body = "You may withdraw consent and delete all stored data at any time via Settings → Delete All Data. Declining consent means the app cannot store recordings and most functionality will be unavailable. You can re-consent at any time from the Settings screen."</ID>
+    <ID>MaxLineLength:LiveMonitorViewModel.kt$LiveMonitorViewModel$if (evicted &lt;= rollingMin) rollingMin = if (rollingWindow.isEmpty()) Float.MAX_VALUE else rollingWindow.min()</ID>
+    <ID>MaxLineLength:LiveMonitorViewModel.kt$LiveMonitorViewModel$if (evicted &gt;= rollingMax) rollingMax = if (rollingWindow.isEmpty()) Float.MIN_VALUE else rollingWindow.max()</ID>
+    <ID>MaxLineLength:NavigationHost.kt$"ECG Monitor requires your consent to store and process health data. Without it, recordings and monitoring are unavailable."</ID>
+    <ID>MaxLineLength:SessionDetailScreen.kt$Icon(Icons.Default.FilterList, contentDescription = null, modifier = Modifier.size(16.dp), tint = MedicalCyan)</ID>
+    <ID>MaxLineLength:SessionDetailScreen.kt$Text(event.type.displayName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(event.type.color))</ID>
+    <ID>MaxLineLength:SessionDetailScreen.kt$Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = color)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$!isBluetoothEnabled(context) -&gt; viewModel.setError("Bluetooth is disabled. Enable it in device settings.")</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$"Permanently deletes all ECG recordings, arrhythmia events, and statistics from this device. Cannot be undone. Your consent record is retained as required by law."</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$"Withdrawing consent will delete all recordings and disable data storage. The app will require re-consent to function. You can re-consent at any time."</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$Icon(Icons.Default.PrivacyTip, contentDescription = null, tint = MedicalCyan, modifier = Modifier.size(20.dp))</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$Text("No devices found. Tap Scan to search.", fontSize = 14.sp, color = MedicalTextSecondary)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$Text(device.name ?: "Unknown Device", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$is ConnectionState.Connected -&gt; Triple("Connected to ${connectionState.device.name}", MedicalGreen, Icons.Default.BluetoothConnected)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$is ConnectionState.Connecting -&gt; Triple("Connecting...", MedicalOrange, Icons.Default.Bluetooth)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$is ConnectionState.Disconnected -&gt; Triple("Not Connected", MedicalTextSecondary, Icons.Default.BluetoothDisabled)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$is ConnectionState.Error -&gt; Triple(connectionState.message, MedicalRed, Icons.Default.Error)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$is ConnectionState.Scanning -&gt; Triple("Scanning...", MedicalCyan, Icons.Default.BluetoothSearching)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$isConnected = (connectionState as? ConnectionState.Connected)?.device == device</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$isConnecting -&gt; CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MedicalOrange, strokeWidth = 2.dp)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$isConnecting = connectingAddress == device.address &amp;&amp; connectionState is ConnectionState.Connecting</ID>
+    <ID>NestedBlockDepth:FirebaseRepository.kt$FirebaseRepository$suspend fun uploadSession( session: EcgSessionEntity, events: List&lt;ArrhythmiaEventEntity&gt; )</ID>
+    <ID>NewLineAtEndOfFile:ArrhythmiaClassifier.kt$com.ecgmonitor.app.data.ml.ArrhythmiaClassifier.kt</ID>
+    <ID>NewLineAtEndOfFile:BleManager.kt$com.ecgmonitor.app.data.ble.BleManager.kt</ID>
+    <ID>NewLineAtEndOfFile:BlePermissions.kt$com.ecgmonitor.app.data.ble.BlePermissions.kt</ID>
+    <ID>NewLineAtEndOfFile:CloudSyncCard.kt$com.ecgmonitor.app.ui.screens.CloudSyncCard.kt</ID>
+    <ID>NewLineAtEndOfFile:ConsentAndAuditDaos.kt$com.ecgmonitor.app.data.database.dao.ConsentAndAuditDaos.kt</ID>
+    <ID>NewLineAtEndOfFile:ConsentAndAuditEntities.kt$com.ecgmonitor.app.data.database.entities.ConsentAndAuditEntities.kt</ID>
+    <ID>NewLineAtEndOfFile:ConsentManager.kt$com.ecgmonitor.app.data.consent.ConsentManager.kt</ID>
+    <ID>NewLineAtEndOfFile:ConsentScreen.kt$com.ecgmonitor.app.ui.screens.ConsentScreen.kt</ID>
+    <ID>NewLineAtEndOfFile:Converters.kt$com.ecgmonitor.app.data.database.converters.Converters.kt</ID>
+    <ID>NewLineAtEndOfFile:Daos.kt$com.ecgmonitor.app.data.database.dao.Daos.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgChartComposable.kt$com.ecgmonitor.app.ui.components.EcgChartComposable.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgChartView.kt$com.ecgmonitor.app.ui.components.EcgChartView.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgDatabase.kt$com.ecgmonitor.app.data.database.EcgDatabase.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgModels.kt$com.ecgmonitor.app.data.models.EcgModels.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgMonitorApp.kt$com.ecgmonitor.app.EcgMonitorApp.kt</ID>
+    <ID>NewLineAtEndOfFile:EcgRepository.kt$com.ecgmonitor.app.data.repository.EcgRepository.kt</ID>
+    <ID>NewLineAtEndOfFile:Entities.kt$com.ecgmonitor.app.data.database.entities.Entities.kt</ID>
+    <ID>NewLineAtEndOfFile:ExampleUnitTest.kt$com.ecgmonitor.app.ExampleUnitTest.kt</ID>
+    <ID>NewLineAtEndOfFile:ExportManager.kt$com.ecgmonitor.app.utils.ExportManager.kt</ID>
+    <ID>NewLineAtEndOfFile:FirebaseRepository.kt$com.ecgmonitor.app.data.firebase.FirebaseRepository.kt</ID>
+    <ID>NewLineAtEndOfFile:HistoryScreen.kt$com.ecgmonitor.app.ui.screens.HistoryScreen.kt</ID>
+    <ID>NewLineAtEndOfFile:HistoryViewModel.kt$com.ecgmonitor.app.ui.viewmodels.HistoryViewModel.kt</ID>
+    <ID>NewLineAtEndOfFile:LiveMonitorScreen.kt$com.ecgmonitor.app.ui.screens.LiveMonitorScreen.kt</ID>
+    <ID>NewLineAtEndOfFile:LiveMonitorViewModel.kt$com.ecgmonitor.app.ui.viewmodels.LiveMonitorViewModel.kt</ID>
+    <ID>NewLineAtEndOfFile:MainActivity.kt$com.ecgmonitor.app.MainActivity.kt</ID>
+    <ID>NewLineAtEndOfFile:MitBihDataLoader.kt$com.ecgmonitor.app.data.mitbih.MitBihDataLoader.kt</ID>
+    <ID>NewLineAtEndOfFile:NavigationHost.kt$com.ecgmonitor.app.navigation.NavigationHost.kt</ID>
+    <ID>NewLineAtEndOfFile:Screen.kt$com.ecgmonitor.app.navigation.Screen.kt</ID>
+    <ID>NewLineAtEndOfFile:SessionDetailScreen.kt$com.ecgmonitor.app.ui.screens.SessionDetailScreen.kt</ID>
+    <ID>NewLineAtEndOfFile:SessionDetailViewModel.kt$com.ecgmonitor.app.ui.viewmodels.SessionDetailViewModel.kt</ID>
+    <ID>NewLineAtEndOfFile:SettingsScreen.kt$com.ecgmonitor.app.ui.screens.SettingsScreen.kt</ID>
+    <ID>NewLineAtEndOfFile:SettingsViewModel.kt$com.ecgmonitor.app.ui.viewmodels.SettingsViewModel.kt</ID>
+    <ID>NewLineAtEndOfFile:SyncManager.kt$com.ecgmonitor.app.data.firebase.SyncManager.kt</ID>
+    <ID>NewLineAtEndOfFile:UploadState.kt$com.ecgmonitor.app.data.firebase.UploadState.kt</ID>
+    <ID>ReturnCount:BleManager.kt$BleManager$suspend fun connect(device: BleDevice)</ID>
+    <ID>ReturnCount:LiveMonitorViewModel.kt$LiveMonitorViewModel$private fun detectBeat(reading: EcgReading)</ID>
+    <ID>ReturnCount:SyncManager.kt$SyncManager$suspend fun syncSession(sessionId: String)</ID>
+    <ID>TooGenericExceptionCaught:BleManager.kt$BleManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:EcgRepository.kt$EcgRepository$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ExportManager.kt$ExportManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:FirebaseRepository.kt$FirebaseRepository$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LiveMonitorViewModel.kt$LiveMonitorViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MitBihDataLoader.kt$MitBihDataLoader$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SyncManager.kt$SyncManager$e: Exception</ID>
+    <ID>TooManyFunctions:EcgRepository.kt$EcgRepository</ID>
+    <ID>TooManyFunctions:SessionDetailScreen.kt$com.ecgmonitor.app.ui.screens.SessionDetailScreen.kt</ID>
+    <ID>TooManyFunctions:SessionDetailViewModel.kt$SessionDetailViewModel : AndroidViewModel</ID>
+    <ID>WildcardImport:ExampleUnitTest.kt$import org.junit.Assert.*</ID>
+  </CurrentIssues>
+</SmellBaseline>
