@@ -61,7 +61,7 @@ class BleManager(private val context: Context) {
     /**
      * Hot stream of beat windows from the ESP32 for app-side classification.
      * Each beat window contains:
-     *   - 250 filtered ECG samples (int16)
+     *   - 128 filtered ECG samples (int16)
      *   - 3 RR interval features (float32)
      *
      * Beat windows arrive ~once per heartbeat so 8 slots is more than sufficient;
@@ -422,14 +422,14 @@ class BleManager(private val context: Context) {
     }
 
     /**
-     * Parses a 519-byte little-endian beat window packet.
+     * Parses a 275-byte little-endian beat window packet.
      *
      * Layout (matches config.h BeatPacket):
      * - [0]         uint8      marker          always 0xBE
      * - [1-4]       uint32     timestamp_ms    R-peak time (LE)
      * - [5-6]       uint16     beat_num        rolling beat counter (LE)
-     * - [7-506]     int16[250] ecg             filtered beat window (LE)
-     * - [507-518]   float[3]   rr_features     [pre_rr_norm, post_rr_norm, ratio] (LE)
+     * - [7-262]     int16[128] ecg             filtered beat window (LE)
+     * - [263-274]   float[3]   rr_features     [pre_rr_norm, post_rr_norm, ratio] (LE)
      *
      * The beat window is sent to the ViewModel where TFLite runs classification.
      */
@@ -450,7 +450,7 @@ class BleManager(private val context: Context) {
         val timestampMs = buf.int.toLong() and 0xFFFFFFFFL
         val beatNum = buf.short.toInt() and 0xFFFF
 
-        // Parse 250 int16 ECG samples
+        // Parse 128 int16 ECG samples
         val ecgSamples = ShortArray(BEAT_WINDOW_SIZE) { buf.short }
 
         // Parse 3 float32 RR features
@@ -577,14 +577,14 @@ data class EcgPacket(
 /**
  * Beat window packet received from ESP32 for app-side classification.
  *
- * Contains a 250-sample ECG window centered on an R-peak, plus RR interval
+ * Contains a 128-sample ECG window centered on an R-peak, plus RR interval
  * features. The ViewModel uses ArrhythmiaClassifier to run TFLite inference
  * on this data.
  */
 data class BeatWindow(
     val beatNum     : Int,        // Rolling beat counter (0-65535)
     val timestampMs : Long,       // R-peak timestamp from ESP32
-    val ecgSamples  : ShortArray, // 250 filtered ECG samples (int16)
+    val ecgSamples  : ShortArray, // 128 filtered ECG samples (int16)
     val rrFeatures  : FloatArray  // [pre_rr_norm, post_rr_norm, ratio]
 ) {
     override fun equals(other: Any?): Boolean {

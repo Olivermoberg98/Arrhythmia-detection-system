@@ -33,7 +33,7 @@ Architecture and training strategy based on:
     → optimize_thresholds()
 
 Dual-input design:
-  - Input 1 (ecg):  shape (250,)  — asymmetric beat window (187 pre / 63 post)
+  - Input 1 (ecg):  shape (128,)  — asymmetric beat window (96 pre / 32 post)
   - Input 2 (rr):   shape (3,)    — pre_rr_norm, post_rr_norm, ratio_rr
   CNN processes ECG → GlobalAveragePooling → concatenate RR features → dense head
   RR features provide the temporal context that morphology alone cannot capture,
@@ -91,6 +91,8 @@ BATCH_SIZE      = 128
 EPOCHS          = 100
 LEARNING_RATE   = 3e-4
 LABEL_SMOOTHING = 0.1
+# Tried COSINE_T0=8 (2026-08-10): test macro-F1 fell 0.72->0.67, val curve
+# got noisier. Reverted to 20.
 COSINE_T0       = 20
 COSINE_TMUL     = 2
 
@@ -264,7 +266,12 @@ def residual_block_1d(x, filters, kernel_size, l2_reg=1e-3):
 def build_residual_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
     """
     Dual-input Residual 1D CNN + RR features.
-    Residual CNN branch inspired by Hannun et al. (2019) [2]. ~37K parameters.
+    Residual CNN branch inspired by Hannun et al. (2019) [2]. ~136K parameters
+    (verify with model.count_params(), this drifts).
+
+    Tried Stage 3 at 96 filters (2026-08-10): train acc unchanged (~98.8%)
+    but test macro-F1 fell 0.72->0.67, so reverted to 128 — capacity wasn't
+    the overfitting bottleneck, effective batch size is a better suspect.
     """
     reg = keras.regularizers.l2(l2_reg)
 
@@ -276,16 +283,16 @@ def build_residual_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
     x = layers.Conv1D(32, 7, padding='same', kernel_regularizer=reg)(x)
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
-    x = layers.MaxPooling1D(2)(x)       # 250 → 125
+    x = layers.MaxPooling1D(2)(x)       # 128 → 64
 
     # Stage 1 — 32 filters
     x = residual_block_1d(x, 32, 5, l2_reg)
-    x = layers.MaxPooling1D(2)(x)       # 125 → 62
+    x = layers.MaxPooling1D(2)(x)       # 64 → 32
     x = layers.Dropout(0.2)(x)
 
     # Stage 2 — 64 filters
     x = residual_block_1d(x, 64, 5, l2_reg)
-    x = layers.MaxPooling1D(2)(x)       # 62 → 31
+    x = layers.MaxPooling1D(2)(x)       # 32 → 16
     x = layers.Dropout(0.3)(x)
 
     # Stage 3 — 128 filters
@@ -311,7 +318,7 @@ def build_residual_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
 
 def build_standard_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
     """
-    Dual-input Standard 1D CNN + RR features. ~52K parameters.
+    Dual-input Standard 1D CNN + RR features. ~47K parameters.
     Based on Yıldırım et al. (2018) [3].
     """
     reg = keras.regularizers.l2(l2_reg)
@@ -345,7 +352,7 @@ def build_standard_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
 
 def build_lightweight_model(beat_length, n_rr_features, num_classes, l2_reg=1e-3):
     """
-    Dual-input Lightweight 1D CNN + RR features. ~22K parameters.
+    Dual-input Lightweight 1D CNN + RR features. ~12K parameters.
     Optimized for ESP32 deployment.
     """
     reg = keras.regularizers.l2(l2_reg)
@@ -529,9 +536,9 @@ def main():
     # Architecture
     # ------------------------------------------------------------------
     print("\nSelect architecture:")
-    print("1. Residual 1D CNN + RR  (~37K params)  ← RECOMMENDED")
-    print("2. Standard 1D CNN + RR  (~52K params)")
-    print("3. Lightweight CNN + RR  (~22K params, ESP32)")
+    print("1. Residual 1D CNN + RR  (~136K params)  ← RECOMMENDED")
+    print("2. Standard 1D CNN + RR  (~47K params)")
+    print("3. Lightweight CNN + RR  (~12K params, ESP32)")
     choice = input("Choice (1/2/3): ").strip()
 
     if choice == "2":
@@ -604,15 +611,18 @@ def main():
     # ------------------------------------------------------------------
     # Callbacks
     # NOTE: EarlyStopping MUST use mode='min' for val_loss monitoring.
-    #       mode='max' treats rising loss as improvement — training never
-    #       stops at the right time.  Do not change this.
+    #       mode='max' treats rising loss as improvement.  Do not change this.
+    # NOTE: ModelCheckpoint and EarlyStopping MUST monitor the SAME metric —
+    #       they used to disagree (val_accuracy vs val_loss), so the saved
+    #       .keras file was silently a different epoch than the one this
+    #       script evaluated and reported on.
     # ------------------------------------------------------------------
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_path = os.path.join(MODEL_DIR, f'model_{arch_name}_{timestamp}.keras')
 
     callbacks = [
-        ModelCheckpoint(model_path, monitor='val_accuracy',
-                        save_best_only=True, verbose=1),
+        ModelCheckpoint(model_path, monitor='val_loss',
+                        mode='min', save_best_only=True, verbose=1),
         EarlyStopping(monitor='val_loss',
                       patience=15,
                       mode='min',        # ← MUST be 'min': lower loss = better

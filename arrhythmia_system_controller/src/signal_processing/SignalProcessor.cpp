@@ -216,7 +216,7 @@ bool SignalProcessor::isBeatReady() const {
 }
 
 // ======================================================================
-// getBeat — linearise the 250-sample window into out[]
+// getBeat — linearise the 128-sample window into out[]
 // ======================================================================
 
 void SignalProcessor::getBeat(float* out) const {
@@ -228,7 +228,7 @@ void SignalProcessor::getBeat(float* out) const {
     // is now sitting at (rPeak + BEAT_POST_SAMPLES + 1) mod BUF.
 
     const size_t BUF = SamplingCfg::ECG_BEAT_BUFFER_SIZE;
-    const size_t WIN = SamplingCfg::BEAT_WINDOW_SAMPLES;  // 250
+    const size_t WIN = SamplingCfg::BEAT_WINDOW_SAMPLES;  // 128
 
     // Start of window = rPeak - BEAT_PRE_SAMPLES
     size_t startPos = (_rPeakBufPos + BUF - SamplingCfg::BEAT_PRE_SAMPLES) % BUF;

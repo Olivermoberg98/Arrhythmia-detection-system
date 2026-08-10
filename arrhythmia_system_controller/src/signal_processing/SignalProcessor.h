@@ -13,7 +13,7 @@
  *
  * On each detected R-peak the processor:
  *   1. Waits until BEAT_POST_SAMPLES more samples arrive so the full
- *      250-sample window (187 pre + 63 post) is available.
+ *      128-sample window (96 pre + 32 post) is available.
  *   2. Sets a "beat ready" flag consumable by the caller.
  *   3. Updates a circular RR-interval history for feature computation.
  *
@@ -52,7 +52,7 @@ public:
     bool isBeatReady() const;
 
     /**
-     * @brief  Copy the 250-sample beat window into out[BEAT_WINDOW_SAMPLES].
+     * @brief  Copy the 128-sample beat window into out[BEAT_WINDOW_SAMPLES].
      *         Samples are in chronological order (oldest first).
      *         Values are filtered floats — NOT normalised.
      *         Inference.cpp applies the scaler constants from model_config.h.

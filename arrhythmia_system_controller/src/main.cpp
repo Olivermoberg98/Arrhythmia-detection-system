@@ -80,10 +80,10 @@ static void sensorTask(void* /*param*/) {
                 beatPkt.timestamp_ms = millis();
                 beatPkt.beat_num     = s_beatNum++;
                 
-                // Get beat window (250 samples)
-                float beatFloat[250];
+                // Was hardcoded to 250 — overflowed beatPkt.ecg (int16_t[128]).
+                float beatFloat[SamplingCfg::BEAT_WINDOW_SAMPLES];
                 processor.getBeat(beatFloat);
-                for (int i = 0; i < 250; i++) {
+                for (size_t i = 0; i < SamplingCfg::BEAT_WINDOW_SAMPLES; i++) {
                     beatPkt.ecg[i] = static_cast<int16_t>(beatFloat[i]);
                 }
                 

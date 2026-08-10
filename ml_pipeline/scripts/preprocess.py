@@ -92,9 +92,9 @@ Three RR features are computed per beat (from annotation sample indices):
 These are then StandardScaler-normalized using training statistics only.
 ─────────────────────────────────────────────────────────────────────────────
 
-Asymmetric Window — why 187 pre / 63 post instead of 125 / 125:
+Asymmetric Window — why 96 pre / 32 post instead of 64 / 64:
 ─────────────────────────────────────────────────────────────────────────────
-A symmetric window centered on the R-peak devotes 500ms both before and after.
+A symmetric window centered on the R-peak devotes equal time before and after.
 But the clinically informative morphology is asymmetric:
 
   BEFORE R-peak: P-wave (120–200ms before R), PR segment, previous T-wave
@@ -102,13 +102,10 @@ But the clinically informative morphology is asymmetric:
     → More pre-R context helps the CNN distinguish N from S on morphology alone
 
   AFTER R-peak: QRS downstroke (~40ms) + T-wave (ends ~300ms after R)
-    → 252ms (63 samples) is sufficient to capture the full T-wave
+    → 128ms (32 samples) is sufficient to capture the full T-wave
 
-Extending pre-window from 500ms to 748ms (+248ms) adds two full P-wave
-durations of context at the cost of 62 samples of post-R redundancy that
-contained little discriminating information beyond the T-wave.
-
-Total window remains 250 samples (1 second at 250 Hz) — no model size change.
+Total window is 128 samples (384ms pre / 128ms post = 512ms @ 250 Hz).
+(Was 187/63 = 250 samples in an earlier draft; ESP32/app already agree on 128.)
 ─────────────────────────────────────────────────────────────────────────────
 """
 
@@ -154,21 +151,20 @@ LOWCUT       = 0.5
 HIGHCUT      = 40.0
 FILTER_ORDER = 4
 
-# Patient-level splits — de Chazal et al. (2004) DS1/DS2 standard
-# VAL: records 201, 207, 209, 223 pulled from DS1.
-#   - 209: 383 S beats  — best single-patient S source in DS1
-#   - 223:  73 S, 473 V — good S+V balance for threshold calibration
-#   - 201: 128 S, 198 V — all-round minority coverage
-#   - 207: 107 S, 210 V — morphologically distinct (ventricular escape mix)
+# Patient-level splits — de Chazal et al. (2004) DS1/DS2 standard.
+# VAL = 118, 201, 207, 223 (pulled from DS1 for minority coverage).
+# 209 (383 S beats, the largest S source in DS1) stays in TRAIN — an earlier
+# split had it in VAL instead, starving TRAIN to 253 S beats and causing
+# S-class overfitting (run 20260307_154201). Swapped with 118.
 
 TRAIN_RECORDS = [
-    101, 106, 108, 109, 112, 114, 115, 116, 118, 119,
+    101, 106, 108, 109, 112, 114, 115, 116, 119,
     122, 124,
-    203, 205, 208, 215, 220, 230,
+    203, 205, 208, 209, 215, 220, 230,
 ]
 
 VAL_RECORDS = [
-    201, 207, 209, 223,
+    118, 201, 207, 223,
 ]
 
 TEST_RECORDS = [
