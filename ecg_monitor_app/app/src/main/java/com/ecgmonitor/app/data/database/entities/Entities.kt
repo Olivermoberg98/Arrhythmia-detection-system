@@ -25,7 +25,9 @@ data class EcgSessionEntity(
     val afibCount: Int,
     val otherArrhythmiaCount: Int,
     val healthStatus: HealthStatus,
-    val notes: String? = null
+    val notes: String? = null,
+    /** Timestamp of a successful cloud upload; null means the session is still pending sync. */
+    val uploadedAt: Long? = null
 )
 
 enum class HealthStatus {

@@ -27,7 +27,7 @@ import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
         ConsentEntity::class,
         AuditLogEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,6 +40,9 @@ abstract class EcgDatabase : RoomDatabase() {
     abstract fun auditLogDao(): AuditLogDao
 
     companion object {
+
+        private const val VERSION_2 = 2
+        private const val VERSION_3 = 3
 
         @Volatile
         private var INSTANCE: EcgDatabase? = null
@@ -68,6 +71,13 @@ abstract class EcgDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds the uploadedAt cloud-sync marker introduced in version 3. */
+        val MIGRATION_2_3 = object : Migration(VERSION_2, VERSION_3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE ecg_sessions ADD COLUMN uploadedAt INTEGER")
+            }
+        }
+
         fun getDatabase(context: Context): EcgDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -75,7 +85,7 @@ abstract class EcgDatabase : RoomDatabase() {
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { INSTANCE = it }
             }

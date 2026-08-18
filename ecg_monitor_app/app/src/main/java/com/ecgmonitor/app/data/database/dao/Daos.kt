@@ -23,6 +23,9 @@ interface EcgSessionDao {
     @Query("SELECT * FROM ecg_sessions WHERE id = :sessionId")
     fun getSessionFlow(sessionId: String): Flow<EcgSessionEntity?>
 
+    @Query("SELECT * FROM ecg_sessions WHERE uploadedAt IS NULL ORDER BY startTime ASC")
+    suspend fun getPendingUploads(): List<EcgSessionEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: EcgSessionEntity)
 
