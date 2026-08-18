@@ -438,7 +438,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                         sessionName     = null,
                         heartRateStats  = heartRateStats
                     )
-                    syncManager.syncSession(sessionId)
+                    syncManager.syncSessionAsync(sessionId)
                     Timber.i(
                         "Saved session $sessionId — ${recordingBuffer.size} samples, " +
                                 "${duration}s, HR avg=${heartRateStats?.avg}"
