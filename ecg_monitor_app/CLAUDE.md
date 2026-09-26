@@ -22,7 +22,7 @@ Run from `ecg_monitor_app/`:
 .\gradlew.bat assembleRelease        # release build (minify disabled, uses proguard-rules.pro)
 .\gradlew.bat installDebug           # install debug build on connected device/emulator
 .\gradlew.bat test                   # JVM unit tests
-.\gradlew.bat connectedAndroidTest   # instrumented tests (needs device/emulator)
+.\gradlew.bat connectedAndroidTest   # instrumented tests, incl. Room migration tests (needs device/emulator)
 .\gradlew.bat lint                   # standard Android Lint (no custom ruleset configured)
 .\gradlew.bat detekt                 # Kotlin static analysis (default ruleset, baselined against pre-existing findings)
 ```
@@ -59,9 +59,10 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 - **No domain/UseCase layer.** Business logic lives in repositories, called directly from ViewModels — don't introduce a new architectural layer without discussion.
 - **No DI framework** (no Hilt/Koin/Dagger). New app-scoped dependencies go through `EcgMonitorApp`'s manual singleton wiring, matching the existing `bleManager`/`syncManager`/`consentManager`/`firebaseRepository` pattern.
 - **Streaming data uses `MutableSharedFlow` with a bounded buffer and `DROP_OLDEST`** (see `BleManager.kt`, 64-slot buffer) for packet-loss tolerance — follow this pattern for new streaming sources rather than an unbounded channel.
+- **Room schemas are exported to `app/schemas` and committed** (`room.schemaLocation` KSP arg). Bumping `@Database(version = ...)` must produce a new schema JSON *and* a `MigrationTestHelper` case in `EcgDatabaseMigrationTest` — the exported JSON is what makes the migration testable at all.
 - **Firebase sync uploads metadata only** (session stats + arrhythmia events, batched 500/batch) — raw waveform samples intentionally stay local-only in Room to stay free-tier compatible. Preserve this split when touching sync code.
 - **Commit message style** observed in git log: `Update (Scope): Description`, e.g. `Update (App): Fix the data base storage via Firebase`, `Update (ESP): ...` — scope is typically `App`, `ESP`, or the changed area.
-- **No test coverage exists** beyond the default `ExampleUnitTest.kt` / `ExampleInstrumentedTest.kt` templates — don't assume repositories, ViewModels, BLE parsing, or the classifier are under test (see TODO below).
+- **Test coverage is limited to the ML monitoring layer** (`SignalQualityAnalyzerTest`, `ClassificationMonitorTest`) plus `EcgDatabaseMigrationTest` — don't assume repositories, ViewModels, BLE parsing, or the classifier itself are under test (see TODO below).
 - **No ktlint/.editorconfig** — match the surrounding file's style manually; there's no automated formatter to defer to. **detekt** is configured (default ruleset, `app/detekt-baseline.xml` suppresses pre-existing findings) — new code should pass `.\gradlew.bat detekt` cleanly; don't add to the baseline to silence a new finding, fix it or ask.
 
 ## My working preferences

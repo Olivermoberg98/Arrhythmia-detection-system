@@ -12,6 +12,7 @@ import com.ecgmonitor.app.data.models.ArrhythmiaType
 import com.ecgmonitor.app.data.models.DataSource
 import com.ecgmonitor.app.data.models.EcgReading
 import com.ecgmonitor.app.data.models.EcgSession
+import com.ecgmonitor.app.data.ml.MonitoringSummary
 import kotlinx.coroutines.flow.Flow
 import timber.log.Timber
 
@@ -31,6 +32,16 @@ class EcgRepository(
      */
     data class HeartRateStats(val avg: Int, val min: Int, val max: Int)
 
+    /**
+     * Derived per-session measurements supplied by the ViewModel: heart-rate statistics
+     * from beat detection, and classifier-health metrics from the monitoring layer.
+     * Both are absent for MIT-BIH imports, which are replayed rather than measured.
+     */
+    data class SessionMetrics(
+        val heartRate: HeartRateStats? = null,
+        val monitoring: MonitoringSummary? = null
+    )
+
     fun getAllSessions(): Flow<List<EcgSessionEntity>> = sessionDao.getAllSessions()
 
     suspend fun getSessionWithData(sessionId: String): SessionWithData? {
@@ -45,10 +56,11 @@ class EcgRepository(
         events: List<ArrhythmiaEvent>,
         sessionMetadata: EcgSession,
         sessionName: String? = null,
-        heartRateStats: HeartRateStats? = null
+        metrics: SessionMetrics = SessionMetrics()
     ): String {
         val sessionId = sessionMetadata.id
-        val stats = calculateSessionStatistics(events, heartRateStats)
+        val stats = calculateSessionStatistics(events, metrics.heartRate)
+        val monitoring = metrics.monitoring
 
         val sessionEntity = EcgSessionEntity(
             id = sessionId,
@@ -67,7 +79,17 @@ class EcgRepository(
             pvcCount = stats.pvcCount,
             afibCount = stats.afibCount,
             otherArrhythmiaCount = stats.otherArrhythmiaCount,
-            healthStatus = determineHealthStatus(stats)
+            healthStatus = determineHealthStatus(stats),
+            modelVersion = monitoring?.modelVersion,
+            meanConfidence = monitoring?.meanConfidence,
+            lowConfidenceRate = monitoring?.lowConfidenceRate,
+            meanEntropy = monitoring?.meanEntropy,
+            poorSignalRate = monitoring?.poorSignalRate,
+            suppressedEvents = monitoring?.suppressedEvents,
+            driftScore = monitoring?.driftScore,
+            classificationsPerMin = monitoring?.classificationsPerMin,
+            rateFlag = monitoring?.rateFlag?.name,
+            meanInferenceMs = monitoring?.meanInferenceMs
         )
 
         val readingEntities = readings.map { reading ->

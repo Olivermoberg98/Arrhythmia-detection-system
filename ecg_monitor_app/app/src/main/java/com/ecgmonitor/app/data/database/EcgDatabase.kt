@@ -27,7 +27,7 @@ import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
         ConsentEntity::class,
         AuditLogEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -43,6 +43,7 @@ abstract class EcgDatabase : RoomDatabase() {
 
         private const val VERSION_2 = 2
         private const val VERSION_3 = 3
+        private const val VERSION_4 = 4
 
         @Volatile
         private var INSTANCE: EcgDatabase? = null
@@ -78,6 +79,29 @@ abstract class EcgDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Adds the per-session model-health columns introduced in version 4.
+         * All nullable — existing sessions predate monitoring and stay NULL.
+         */
+        val MIGRATION_3_4 = object : Migration(VERSION_3, VERSION_4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                listOf(
+                    "modelVersion TEXT",
+                    "meanConfidence REAL",
+                    "lowConfidenceRate REAL",
+                    "meanEntropy REAL",
+                    "poorSignalRate REAL",
+                    "suppressedEvents INTEGER",
+                    "driftScore REAL",
+                    "classificationsPerMin REAL",
+                    "rateFlag TEXT",
+                    "meanInferenceMs REAL"
+                ).forEach { column ->
+                    database.execSQL("ALTER TABLE ecg_sessions ADD COLUMN $column")
+                }
+            }
+        }
+
         fun getDatabase(context: Context): EcgDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -85,7 +109,7 @@ abstract class EcgDatabase : RoomDatabase() {
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -16,6 +16,9 @@ class ArrhythmiaClassifier(context: Context) {
     private val interpreter: Interpreter
     private val metadata: ModelMetadata
 
+    /** Exposed so the monitoring layer can score inputs against the training scaler. */
+    val modelMetadata: ModelMetadata get() = metadata
+
     init {
         // Load TFLite model
         val modelBuffer = FileUtil.loadMappedFile(context, "arrhythmia_model.tflite")
@@ -53,6 +56,7 @@ class ArrhythmiaClassifier(context: Context) {
         val rrScalerJson = json.getJSONObject("rr_scaler")
 
         return ModelMetadata(
+            version = json.optString("version", UNKNOWN_VERSION),
             beatLength = json.getInt("beat_length"),
             nRrFeatures = json.getInt("n_rr_features"),
             classes = classes,
@@ -134,10 +138,16 @@ class ArrhythmiaClassifier(context: Context) {
     fun close() {
         interpreter.close()
     }
+
+    private companion object {
+        const val UNKNOWN_VERSION = "unknown"
+    }
 }
 
 // Data classes
 data class ModelMetadata(
+    /** Model release from `model_metadata.json`, so health metrics attribute to a version. */
+    val version: String,
     val beatLength: Int,
     val nRrFeatures: Int,
     val classes: List<ClassInfo>,
