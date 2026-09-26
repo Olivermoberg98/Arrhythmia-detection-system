@@ -23,9 +23,10 @@ bool ECGSensor::begin() {
 
     // Configure ADC for ECG pin.
     // ADC1 channels are safe to use without WiFi/BLE restrictions.
-    // Set 12-bit width and 11 dB attenuation (0–3.9 V range).
+    // 12-bit width, 11 dB attenuation (~0-3.1 V usable).
     adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC1_CHANNEL_6, ADC_ATTEN_DB_11); // GPIO34
+    adc1_config_channel_atten(
+        static_cast<adc1_channel_t>(Pins::ECG_ADC_CHANNEL), ADC_ATTEN_DB_11);
 
     startTimer();
     _ready = false;
@@ -49,7 +50,7 @@ void ECGSensor::update() {
     }
 
     // Read ADC and centre around zero
-    int raw = adc1_get_raw(ADC1_CHANNEL_6);
+    int raw = adc1_get_raw(static_cast<adc1_channel_t>(Pins::ECG_ADC_CHANNEL));
     int16_t sample = static_cast<int16_t>(raw - SamplingCfg::ADC_MIDPOINT);
 
     _buf.pushOverwrite(sample);

@@ -6,10 +6,14 @@
 // Pin Assignments
 // ============================================================
 namespace Pins {
-    // AD8232 ECG
-    constexpr int ECG_OUTPUT   = 34;   // Analog input (ADC1_CH6) – must be ADC1
-    constexpr int ECG_LO_PLUS  = 32;   // Lead-off detect +
-    constexpr int ECG_LO_MINUS = 33;   // Lead-off detect -
+    // AD8232 ECG - ESP32-S3: ADC1 is GPIO1-10 only; GPIO4-10 are taken by the
+    // camera DVP bus and GPIO26-37 by flash + octal PSRAM.
+    constexpr int ECG_OUTPUT   = 1;    // Analog input (ADC1_CH0) - must be ADC1
+    constexpr int ECG_LO_PLUS  = 42;   // Lead-off detect +
+    constexpr int ECG_LO_MINUS = 41;   // Lead-off detect -
+
+    // Must match ECG_OUTPUT: GPIO1 = ADC1_CH0 on ESP32-S3.
+    constexpr int ECG_ADC_CHANNEL = 0;
 }
 
 // ============================================================
