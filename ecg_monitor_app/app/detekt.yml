@@ -13,3 +13,8 @@ complexity:
     ignoreAnnotated: ['Composable']
   TooManyFunctions:
     ignoreAnnotated: ['Composable']
+    # The file- and class-level counts ignore ignoreAnnotated, and a Compose
+    # screen is many small composables by construction. Raised to a level that
+    # still catches a genuine god-object rather than a normal screen file.
+    thresholdInFiles: 25
+    thresholdInClasses: 20

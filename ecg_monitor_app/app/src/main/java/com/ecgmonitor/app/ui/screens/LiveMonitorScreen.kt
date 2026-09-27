@@ -96,6 +96,7 @@ fun LiveMonitorScreen(
     val leadsOff        by viewModel.leadsOff.collectAsStateWithLifecycle()
     val signalQuality   by viewModel.lastSignalQuality.collectAsStateWithLifecycle()
     val modelHealth     by viewModel.monitoringSnapshot.collectAsStateWithLifecycle()
+    val tOverR          by viewModel.tOverR.collectAsStateWithLifecycle()
 
     // Ticker: recompose every second while recording so the duration display counts up.
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -154,7 +155,7 @@ fun LiveMonitorScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            ModelHealthCard(quality = signalQuality, health = modelHealth)
+            ModelHealthCard(quality = signalQuality, health = modelHealth, tOverR = tOverR)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -402,7 +403,11 @@ private fun VitalSignsCard(
  * firmware detects R-peaks, so a flat or lead-off signal never populates this.
  */
 @Composable
-private fun ModelHealthCard(quality: SignalQuality?, health: MonitoringSummary?) {
+private fun ModelHealthCard(
+    quality: SignalQuality?,
+    health: MonitoringSummary?,
+    tOverR: Float?
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
@@ -444,14 +449,15 @@ private fun ModelHealthCard(quality: SignalQuality?, health: MonitoringSummary?)
                     "${health.suppressedEvents}",
                     if (health.suppressedEvents == 0) MedicalTextSecondary else MedicalOrange
                 )
+                HealthStat(
+                    "T/R",
+                    if (tOverR == null) "--" else String.format(Locale.US, "%.2f", tOverR),
+                    trColor(tOverR)
+                )
                 HealthStat("Beats", "${health.totalClassified}", MedicalCyan)
             }
 
-            val notes = buildList {
-                if (quality.flags.isNotEmpty()) add(quality.flags.joinToString(", "))
-                if (health.rateFlag != RateFlag.NORMAL) add(health.rateFlag.name)
-                if (driftColor != MedicalSafeGreen) add("drift off training scale")
-            }
+            val notes = healthNotes(quality, health, tOverR, driftColor)
             if (notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(notes.joinToString(" · "), fontSize = 11.sp, color = MedicalOrange)
@@ -473,6 +479,34 @@ private fun HealthStat(label: String, value: String, color: Color) {
         Text(label, fontSize = 11.sp, color = MedicalTextSecondary)
     }
 }
+
+/**
+ * T/R bands. A correct lead II puts the R wave well above the T wave; climbing
+ * towards 1 means the QRS is not projecting onto the electrode axis, which
+ * starves the classifier and makes R peaks hard to separate from T waves.
+ */
+private fun trColor(tOverR: Float?): Color = when {
+    tOverR == null    -> MedicalTextSecondary
+    tOverR <= TR_GOOD -> MedicalSafeGreen
+    tOverR <= TR_FAIR -> MedicalOrange
+    else              -> MedicalRed
+}
+
+/** Short warning lines for whatever currently needs attention. */
+private fun healthNotes(
+    quality: SignalQuality,
+    health: MonitoringSummary,
+    tOverR: Float?,
+    driftColor: Color
+): List<String> = buildList {
+    if (quality.flags.isNotEmpty()) add(quality.flags.joinToString(", "))
+    if (health.rateFlag != RateFlag.NORMAL) add(health.rateFlag.name)
+    if (driftColor != MedicalSafeGreen) add("drift off training scale")
+    if (tOverR != null && tOverR > TR_FAIR) add("T/R high - check lead II placement")
+}
+
+private const val TR_GOOD = 0.35f
+private const val TR_FAIR = 0.50f
 
 private const val DRIFT_BAND_LOW = 0.24f
 private const val DRIFT_BAND_HIGH = 1.01f

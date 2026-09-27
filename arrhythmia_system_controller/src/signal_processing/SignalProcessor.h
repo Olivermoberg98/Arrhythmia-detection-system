@@ -61,6 +61,13 @@ public:
     void getBeat(float* out) const;
 
     /**
+     * @brief  Samples elapsed since the R-peak of the beat currently being
+     *         reported. Lets the caller timestamp the R-peak itself rather than
+     *         the moment the window finished filling.
+     */
+    uint32_t samplesSinceR() const;
+
+    /**
      * @brief  Fill rr[N_RR_FEATURES] with RR interval features for this beat.
      *         Features: [0] pre_rr_norm, [1] post_rr_norm, [2] ratio_rr
      *         Values are raw ratios — NOT z-score normalised yet.

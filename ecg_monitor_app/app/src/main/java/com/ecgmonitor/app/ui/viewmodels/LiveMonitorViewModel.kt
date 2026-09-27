@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
@@ -61,6 +62,10 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     /** Signal quality of the most recent beat window. */
     private val _lastSignalQuality = MutableStateFlow<SignalQuality?>(null)
     val lastSignalQuality: StateFlow<SignalQuality?> = _lastSignalQuality.asStateFlow()
+
+    /** T/R amplitude ratio, the lead-placement diagnostic. Null until measurable. */
+    private val _tOverR = MutableStateFlow<Float?>(null)
+    val tOverR: StateFlow<Float?> = _tOverR.asStateFlow()
 
     /** Rolling model-health snapshot, updated on every classified beat. */
     private val _monitoringSnapshot = MutableStateFlow<MonitoringSummary?>(null)
@@ -146,9 +151,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      * The min/max values are recomputed from scratch only when the evicted element
      * was the current extremum (O(n) at most twice per packet, amortised O(1)).
      */
-    private val rollingWindow          = ArrayDeque<Float>(ROLLING_WINDOW_SAMPLES)
-    private var rollingMin             = Float.MAX_VALUE
-    private var rollingMax             = Float.MIN_VALUE
+    /** Beats awaiting their T wave: (R-peak timestamp, R amplitude). */
+    private val pendingBeats = ArrayDeque<Pair<Long, Float>>()
+    private var smoothedTOverR = 0f
 
     /**
      * Timestamps (ms) of the last [MAX_BEAT_HISTORY] detected R-peaks,
@@ -182,6 +187,18 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 try {
                     val quality = qualityAnalyzer.analyze(beatWindow)
                     val result  = classifier.classify(beatWindow)
+
+                    // Heart rate and T/R both key off the firmware's R-peak, which
+                    // is Pan-Tompkins with T-wave rejection. The app used to run its
+                    // own threshold detector for the HR display; on a signal with
+                    // T/R ~0.6 it counted T waves and read ~96% high.
+                    recordBeat(beatWindow.timestampMs)
+                    if (beatWindow.ecgSamples.size > BEAT_PRE_SAMPLES) {
+                        pendingBeats.addLast(
+                            beatWindow.timestampMs to
+                                abs(beatWindow.ecgSamples[BEAT_PRE_SAMPLES].toFloat())
+                        )
+                    }
 
                     _lastSignalQuality.value        = quality
                     _lastClassificationResult.value = result
@@ -314,57 +331,60 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         if (_isRecording.value) recordingBuffer.addAll(newReadings)
 
-        for (reading in newReadings) {
-            pushToRollingWindow(reading.voltage)
-            detectBeat(reading)
-        }
+        drainPendingTWaves()
     }
 
     // endregion
 
     // region Beat detection
 
-    /** Appends one sample to the rolling window, maintaining running min/max in O(1). */
-    private fun pushToRollingWindow(value: Float) {
-        if (rollingWindow.size >= ROLLING_WINDOW_SAMPLES) {
-            val evicted = rollingWindow.removeFirst()
-            // If the evicted value was the extremum, recompute from scratch (O(n)).
-            // This is rare — only when the global min/max falls off the window edge.
-            if (evicted <= rollingMin) rollingMin = if (rollingWindow.isEmpty()) Float.MAX_VALUE else rollingWindow.min()
-            if (evicted >= rollingMax) rollingMax = if (rollingWindow.isEmpty()) Float.MIN_VALUE else rollingWindow.max()
+    /**
+     * Computes the T/R amplitude ratio for beats whose T-wave has now streamed in.
+     *
+     * T/R is the diagnostic for lead placement: in a correct lead II the R wave
+     * dominates and the ratio sits around 0.1-0.3. A ratio near 1 means the QRS
+     * is not projecting onto the electrode axis, which both starves the
+     * classifier of the morphology it was trained on and leaves a threshold
+     * detector unable to separate T waves from R peaks.
+     *
+     * Deliberately scale-invariant, so it stays meaningful while the absolute
+     * gain calibration is unresolved.
+     *
+     * Beats are queued because the T wave arrives after the beat packet does.
+     */
+    private fun drainPendingTWaves() {
+        val latest = readingDeque.lastOrNull()?.timestamp ?: return
+
+        while (pendingBeats.isNotEmpty() &&
+            latest >= pendingBeats.first().first + T_WINDOW_END_MS
+        ) {
+            val (rTime, rAmplitude) = pendingBeats.removeFirst()
+            if (rAmplitude < MIN_R_AMPLITUDE) continue
+
+            val tAmplitude = peakInTWindow(rTime)
+            if (tAmplitude > 0f) updateTOverR(tAmplitude / rAmplitude)
         }
-        rollingWindow.addLast(value)
-        if (value < rollingMin) rollingMin = value
-        if (value > rollingMax) rollingMax = value
     }
 
-    /**
-     * Adaptive R-peak detector for raw int16 samples.
-     *
-     * Threshold = windowMin + [BEAT_THRESHOLD_FACTOR] × peak-to-peak amplitude of
-     * the last [ROLLING_WINDOW_SAMPLES] samples (1 second at 250 Hz).
-     * Self-calibrates to any ADC gain or electrode placement.
-     *
-     * Used only for the local heart-rate display. Classification comes from the
-     * ESP32 inference characteristic via [processInferenceResult].
-     */
-    private fun detectBeat(reading: EcgReading) {
-        if (rollingWindow.size < ROLLING_WINDOW_SAMPLES / 2) return
-
-        val amplitude = rollingMax - rollingMin
-        if (amplitude < MIN_SIGNAL_AMPLITUDE) return
-
-        val threshold = rollingMin + (amplitude * BEAT_THRESHOLD_FACTOR)
-        if (reading.voltage <= threshold) return
-
-        val timeSinceLastBeat = if (recentBeatTimestamps.isNotEmpty())
-            reading.timestamp - recentBeatTimestamps.last()
-        else
-            MIN_BEAT_INTERVAL_MS + 1L
-
-        if (timeSinceLastBeat >= MIN_BEAT_INTERVAL_MS) {
-            recordBeat(reading.timestamp)
+    /** Largest excursion in the T-wave window following an R-peak. */
+    private fun peakInTWindow(rTime: Long): Float {
+        var peak = 0f
+        for (reading in readingDeque) {
+            if (reading.timestamp - rTime in T_WINDOW_START_MS..T_WINDOW_END_MS) {
+                val magnitude = abs(reading.voltage)
+                if (magnitude > peak) peak = magnitude
+            }
         }
+        return peak
+    }
+
+    private fun updateTOverR(ratio: Float) {
+        smoothedTOverR = if (smoothedTOverR == 0f) {
+            ratio
+        } else {
+            TR_EMA_ALPHA * ratio + (1f - TR_EMA_ALPHA) * smoothedTOverR
+        }
+        _tOverR.value = smoothedTOverR
     }
 
     /**
@@ -398,9 +418,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Clears all detector state — called on lead reconnect and packet gaps. */
     private fun resetBeatDetector() {
-        rollingWindow.clear()
-        rollingMin         = Float.MAX_VALUE
-        rollingMax         = Float.MIN_VALUE
+        pendingBeats.clear()
+        smoothedTOverR     = 0f
+        _tOverR.value      = null
         recentBeatTimestamps.clear()
         smoothedHeartRate  = 0f
     }
@@ -564,16 +584,18 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Rolling window for adaptive beat detection: 1 second of samples.
          * Threshold = windowMin + BEAT_THRESHOLD_FACTOR × peak-to-peak amplitude.
          */
-        private const val ROLLING_WINDOW_SAMPLES = 250
+        /** Index of the R-peak inside a beat window (96 pre + 32 post). */
+        private const val BEAT_PRE_SAMPLES = 96
 
-        /**
-         * R-peak threshold factor. A sample must be in the top (1 – 0.70) = 30% of the
-         * signal range. R-peaks typically occupy the top 15–20%, T-waves ~40–50%.
-         */
-        private const val BEAT_THRESHOLD_FACTOR = 0.70f
+        /** T-wave search window after the R-peak. */
+        private const val T_WINDOW_START_MS = 200L
+        private const val T_WINDOW_END_MS   = 420L
 
-        /** Minimum interval between beats (~200 bpm max). Rejects double-triggers. */
-        private const val MIN_BEAT_INTERVAL_MS  = 300L
+        /** R amplitude below which T/R is too ill-conditioned to report. */
+        private const val MIN_R_AMPLITUDE = 20f
+
+        /** EMA alpha for the T/R display — slower than HR, it is a setup diagnostic. */
+        private const val TR_EMA_ALPHA = 0.15f
 
         /** Number of recent RR intervals averaged for heart-rate calculation. */
         private const val MAX_BEAT_HISTORY      = 10
@@ -585,11 +607,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          */
         private const val HR_EMA_ALPHA = 0.25f
 
-        /**
-         * Minimum peak-to-peak amplitude (raw int16 units) below which the signal
-         * is treated as flat noise. Corresponds to ~1–2 mV depending on AD8232 gain.
-         */
-        private const val MIN_SIGNAL_AMPLITUDE = 50f
+
     }
 
     /**

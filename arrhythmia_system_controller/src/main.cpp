@@ -97,7 +97,13 @@ static void sensorTask(void* /*param*/) {
             if (!leadOff && processor.isBeatReady()) {
                 BLECfg::BeatPacket beatPkt = {};
                 beatPkt.marker       = 0xBE;
-                beatPkt.timestamp_ms = millis();
+                // config.h documents this as the R-peak timestamp, but it was
+                // millis() at send time — late by the post-R window plus the
+                // crest search. Back-date it so the app can align the beat to
+                // its own stream.
+                beatPkt.timestamp_ms = millis()
+                    - (processor.samplesSinceR() * 1000u
+                       / SamplingCfg::ECG_SAMPLE_RATE_HZ);
                 beatPkt.beat_num     = s_beatNum++;
                 
                 // Was hardcoded to 250 — overflowed beatPkt.ecg (int16_t[128]).
