@@ -33,7 +33,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 SortOrder.MOST_RECENT     -> sessions.sortedByDescending { it.startTime }
                 SortOrder.OLDEST          -> sessions.sortedBy { it.startTime }
                 SortOrder.MOST_ARRHYTHMIAS -> sessions.sortedByDescending {
-                    it.pvcCount + it.afibCount + it.otherArrhythmiaCount
+                    it.pvcCount + it.supraventricularCount + it.otherArrhythmiaCount
                 }
                 SortOrder.LONGEST         -> sessions.sortedByDescending { it.durationSeconds }
             }

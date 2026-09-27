@@ -107,19 +107,20 @@ class EcgDatabaseMigrationTest {
 
     @Test
     fun migrateAll_fromVersion1() {
-        // The full chain, so an install that skipped a release still lands on v4.
+        // The full chain, so an install that skipped a release still lands on v5.
         helper.createDatabase(TEST_DB, VERSION_1).close()
 
         val db = helper.runMigrationsAndValidate(
             TEST_DB,
-            VERSION_4,
+            VERSION_5,
             true,
             EcgDatabase.MIGRATION_1_2,
             EcgDatabase.MIGRATION_2_3,
-            EcgDatabase.MIGRATION_3_4
+            EcgDatabase.MIGRATION_3_4,
+            EcgDatabase.MIGRATION_4_5
         )
 
-        // Tables added along the way are present, and v4 columns reached the end.
+        // Tables added along the way are present, and v5 columns reached the end.
         db.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor ->
             val tables = buildSet {
                 while (cursor.moveToNext()) add(cursor.getString(0))
@@ -132,6 +133,8 @@ class EcgDatabaseMigrationTest {
             assertTrue("uploadedAt missing", "uploadedAt" in columns)
             assertTrue("driftScore missing", "driftScore" in columns)
             assertTrue("rateFlag missing", "rateFlag" in columns)
+            assertTrue("supraventricularCount missing", "supraventricularCount" in columns)
+            assertTrue("afibCount should be gone", "afibCount" !in columns)
         }
         db.close()
     }
@@ -155,12 +158,58 @@ class EcgDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun migrate4To5_matchesTheEntitySchema() {
+        helper.createDatabase(TEST_DB, VERSION_4).close()
+
+        helper.runMigrationsAndValidate(
+            TEST_DB,
+            VERSION_5,
+            true,
+            EcgDatabase.MIGRATION_4_5
+        ).close()
+    }
+
+    @Test
+    fun migrate4To5_carriesAfibCountsIntoTheRenamedColumn() {
+        // The rename rebuilds the table, so this guards the column order in the
+        // INSERT ... SELECT: a misordered copy silently shuffles values between
+        // columns of the same affinity instead of failing.
+        helper.createDatabase(TEST_DB, VERSION_4).apply {
+            execSQL(INSERT_V4_SESSION)
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB,
+            VERSION_5,
+            true,
+            EcgDatabase.MIGRATION_4_5
+        )
+
+        db.query(
+            "SELECT supraventricularCount, pvcCount, totalBeats, normalBeats, " +
+                "rateFlag, driftScore FROM ecg_sessions WHERE id = ?",
+            arrayOf(MONITORED_SESSION_ID)
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+            assertEquals(10, cursor.getInt(1))
+            assertEquals(150, cursor.getInt(2))
+            assertEquals(140, cursor.getInt(3))
+            assertEquals("HIGH_TACHY_SUSPECT", cursor.getString(4))
+            assertEquals(3650.0, cursor.getDouble(5), TOLERANCE)
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
 
         const val VERSION_1 = 1
         const val VERSION_3 = 3
         const val VERSION_4 = 4
+        const val VERSION_5 = 5
 
         const val TOLERANCE = 1e-4
 

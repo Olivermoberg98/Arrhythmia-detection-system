@@ -22,7 +22,12 @@ data class EcgSessionEntity(
     val totalBeats: Int,
     val normalBeats: Int,
     val pvcCount: Int,
-    val afibCount: Int,
+    /**
+     * Supraventricular ectopic beats (AAMI class S), not atrial fibrillation. The
+     * model is 3-class N/S/V and has no AFib output; the old `afibCount` name claimed
+     * a diagnosis the classifier cannot make.
+     */
+    val supraventricularCount: Int,
     val otherArrhythmiaCount: Int,
     val healthStatus: HealthStatus,
     val notes: String? = null,

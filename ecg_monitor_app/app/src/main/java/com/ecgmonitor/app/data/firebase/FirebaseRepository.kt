@@ -118,7 +118,7 @@ class FirebaseRepository {
         "totalBeats"           to session.totalBeats,
         "normalBeats"          to session.normalBeats,
         "pvcCount"             to session.pvcCount,
-        "afibCount"            to session.afibCount,
+        "supraventricularCount" to session.supraventricularCount,
         "otherArrhythmiaCount" to session.otherArrhythmiaCount,
         "healthStatus"         to session.healthStatus.name,
         "totalSamples"         to session.totalSamples,

@@ -27,7 +27,7 @@ import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
         ConsentEntity::class,
         AuditLogEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -44,6 +44,7 @@ abstract class EcgDatabase : RoomDatabase() {
         private const val VERSION_2 = 2
         private const val VERSION_3 = 3
         private const val VERSION_4 = 4
+        private const val VERSION_5 = 5
 
         @Volatile
         private var INSTANCE: EcgDatabase? = null
@@ -102,6 +103,63 @@ abstract class EcgDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Renames afibCount to supraventricularCount (version 5).
+         *
+         * The column always held AAMI class S counts; only the name claimed AFib, which
+         * the 3-class N/S/V model cannot detect. RENAME COLUMN needs SQLite 3.25+
+         * (API 30), so older devices get the table-rebuild path.
+         */
+        val MIGRATION_4_5 = object : Migration(VERSION_4, VERSION_5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE ecg_sessions_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT,
+                        startTime INTEGER NOT NULL,
+                        endTime INTEGER NOT NULL,
+                        samplingRate INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        totalSamples INTEGER NOT NULL,
+                        durationSeconds REAL NOT NULL,
+                        averageHeartRate INTEGER NOT NULL,
+                        minHeartRate INTEGER NOT NULL,
+                        maxHeartRate INTEGER NOT NULL,
+                        totalBeats INTEGER NOT NULL,
+                        normalBeats INTEGER NOT NULL,
+                        pvcCount INTEGER NOT NULL,
+                        supraventricularCount INTEGER NOT NULL,
+                        otherArrhythmiaCount INTEGER NOT NULL,
+                        healthStatus TEXT NOT NULL,
+                        notes TEXT,
+                        uploadedAt INTEGER,
+                        modelVersion TEXT,
+                        meanConfidence REAL,
+                        lowConfidenceRate REAL,
+                        meanEntropy REAL,
+                        poorSignalRate REAL,
+                        suppressedEvents INTEGER,
+                        driftScore REAL,
+                        classificationsPerMin REAL,
+                        rateFlag TEXT,
+                        meanInferenceMs REAL
+                    )"""
+                )
+                database.execSQL(
+                    """INSERT INTO ecg_sessions_new SELECT
+                        id, name, startTime, endTime, samplingRate, source, totalSamples,
+                        durationSeconds, averageHeartRate, minHeartRate, maxHeartRate,
+                        totalBeats, normalBeats, pvcCount, afibCount, otherArrhythmiaCount,
+                        healthStatus, notes, uploadedAt, modelVersion, meanConfidence,
+                        lowConfidenceRate, meanEntropy, poorSignalRate, suppressedEvents,
+                        driftScore, classificationsPerMin, rateFlag, meanInferenceMs
+                    FROM ecg_sessions"""
+                )
+                database.execSQL("DROP TABLE ecg_sessions")
+                database.execSQL("ALTER TABLE ecg_sessions_new RENAME TO ecg_sessions")
+            }
+        }
+
         fun getDatabase(context: Context): EcgDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -109,7 +167,7 @@ abstract class EcgDatabase : RoomDatabase() {
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }
