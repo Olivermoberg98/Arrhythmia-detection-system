@@ -92,17 +92,32 @@ private:
         float  mwiBuf[32] = {};
         size_t mwiHead    = 0;
         float  mwiSum     = 0.0f;
-        // Adaptive threshold (signal peak estimate)
+        // Detection threshold, recomputed from spki/npki rather than decayed.
         float  threshold  = FilterCfg::PT_THRESHOLD_INIT;
+        // Running signal- and noise-peak estimates of the MWI.
+        float  spki       = 0.0f;
+        float  npki       = 0.0f;
+        // Crest search: active between the threshold crossing and the crest.
+        bool     searching     = false;
+        float    searchBest    = 0.0f;   // largest MWI seen so far
+        uint32_t searchBackoff = 0;      // samples since searchBest
+        uint32_t searchLeft    = 0;      // samples left in the search window
         // Refractory counter: samples remaining before next peak allowed
         uint32_t refractory = 0;
     } _pt;
 
     /**
      * Push one filtered sample through the PT pipeline.
-     * Returns true if an R-peak is detected at this sample.
+     *
+     * Returns true when an R-peak is confirmed, which happens up to
+     * PT_SEARCH_SAMPLES after the peak itself; @p backoff receives how many
+     * samples ago the crest was, so the caller can place the beat window on
+     * the R-peak rather than on the confirmation sample.
      */
-    bool ptUpdate(float filtered);
+    bool ptUpdate(float filtered, uint32_t& backoff);
+
+    /** Recompute the detection threshold from the spki/npki estimates. */
+    void updateThreshold();
 
     // ------------------------------------------------------------------ //
     // Beat ring buffer

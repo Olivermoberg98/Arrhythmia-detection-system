@@ -72,7 +72,31 @@ namespace FilterCfg {
     // Pan-Tompkins R-peak detector
     constexpr uint32_t REFRACTORY_SAMPLES = 50;   // 200 ms @ 250 Hz
     constexpr float    PT_THRESHOLD_INIT  = 500.0f;
-    constexpr float    PT_THRESHOLD_DECAY = 0.995f;
+
+    // Samples to keep searching for the MWI crest after the threshold is
+    // crossed. The threshold must be derived from the crest, not from the
+    // crossing, or each detection lowers the threshold and the detector
+    // ratchets down onto T waves.
+    constexpr uint32_t PT_SEARCH_SAMPLES = 25;    // 100 ms @ 250 Hz
+
+    // Running peak estimates: new = W * peak + (1 - W) * old.
+    constexpr float PT_PEAK_WEIGHT = 0.125f;
+
+    // Detection threshold = npki + FRAC * (spki - npki), floored at
+    // FLOOR_FRAC * spki so a run of noise updates cannot drag it down to
+    // where T waves qualify.
+    constexpr float PT_THRESHOLD_FRAC  = 0.25f;
+    constexpr float PT_THRESHOLD_FLOOR = 0.15f;
+
+    // The MWI crest lags the R-peak by the integrator's group delay: half of
+    // the 32-sample window plus the 5-point derivative. The beat window is
+    // defined relative to the R-peak, so the crest is shifted back by that
+    // delay and then snapped to the filtered signal's dominant deflection.
+    constexpr uint32_t PT_MWI_GROUP_DELAY = 18;   // 16 (MWI/2) + 2 (derivative)
+
+    // Half-width of the snap search, either side of the compensated crest.
+    // Kept under half a QRS width so it cannot reach the T wave.
+    constexpr uint32_t PT_RPEAK_SEARCH_HALF = 15;   // 60 ms @ 250 Hz
 }
 
 // ============================================================
