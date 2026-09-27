@@ -35,6 +35,14 @@ namespace SamplingCfg {
     constexpr size_t BEAT_POST_SAMPLES   = 32;
     constexpr size_t BEAT_WINDOW_SAMPLES = BEAT_PRE_SAMPLES + BEAT_POST_SAMPLES; // 128
 
+    // Consecutive lead-off samples before the signal chain is torn down.
+    // The AD8232's DC leads-off comparators chatter on marginal electrode
+    // contact — a real recording showed 18 dropouts in 3.5 s, nearly all a
+    // single sample. Resetting on each one wipes the filters, beat buffer, RR
+    // history and adaptive threshold, so no beat ever survives to completion.
+    // Shorter glitches are ridden out by holding the last good sample.
+    constexpr uint32_t LEAD_OFF_DEBOUNCE_SAMPLES = 62;   // 250 ms @ 250 Hz
+
     // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
     constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
 

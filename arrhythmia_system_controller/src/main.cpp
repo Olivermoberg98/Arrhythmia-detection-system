@@ -28,6 +28,10 @@ static void sensorTask(void* /*param*/) {
     int16_t ecgBatch[SamplingCfg::BLE_ECG_BATCH_SIZE];
     size_t  batchCount = 0;
 
+    // Lead-off debounce state.
+    uint32_t s_leadOffRun  = 0;
+    int16_t  s_lastGoodRaw = 0;
+
     for (;;) {
         const uint32_t now = millis();
 
@@ -37,7 +41,22 @@ static void sensorTask(void* /*param*/) {
             int16_t raw = 0;
             if (ecg.popSamples(&raw, 1) == 0) break;
 
-            const bool leadOff = !ecg.leadsOn() || (raw == INT16_MIN);
+            // Lead-off is debounced: the AD8232's comparators chatter on
+            // marginal contact, and a single-sample glitch must not tear down
+            // the detector's state. Brief glitches hold the last good sample so
+            // the filters and threshold keep tracking; only a sustained outage
+            // resets the chain and zeroes the stream.
+            const bool leadOffNow = !ecg.leadsOn() || (raw == INT16_MIN);
+
+            if (leadOffNow) {
+                if (s_leadOffRun < SamplingCfg::LEAD_OFF_DEBOUNCE_SAMPLES) s_leadOffRun++;
+            } else {
+                s_leadOffRun  = 0;
+                s_lastGoodRaw = raw;
+            }
+
+            const bool leadOff =
+                (s_leadOffRun >= SamplingCfg::LEAD_OFF_DEBOUNCE_SAMPLES);
 
             if (leadOff) {
                 processor.reset();
@@ -47,7 +66,8 @@ static void sensorTask(void* /*param*/) {
             if (leadOff) {
                 sampleToSend = 0;
             } else {
-                float filtered = processor.processSample(raw);
+                float filtered = processor.processSample(
+                    leadOffNow ? s_lastGoodRaw : raw);
                 sampleToSend   = static_cast<int16_t>(filtered);
             }
 
