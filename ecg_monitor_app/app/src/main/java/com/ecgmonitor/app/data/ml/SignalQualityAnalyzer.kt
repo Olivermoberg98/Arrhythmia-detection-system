@@ -39,6 +39,9 @@ data class SignalQuality(
  *
  * @param ecgMean training-set mean from `model_metadata.json`.
  * @param ecgStd training-set standard deviation from `model_metadata.json`.
+ * @param countsToMv ADC counts to electrode-referred millivolts, applied only in
+ *   [SignalQuality.distanceFromTraining] so drift is measured in the units the scaler
+ *   was fit on. The quality metrics stay in counts — they are peak-to-peak normalised.
  * @param minPeakToPeak amplitude below which the window is treated as flat line.
  * @param saturationLevel magnitude at which a sample counts as rail-clipped. Defaults
  *   to the 12-bit ADC excursion, since stream samples are documented as offsets from
@@ -47,6 +50,7 @@ data class SignalQuality(
 class SignalQualityAnalyzer(
     private val ecgMean: Float,
     private val ecgStd: Float,
+    private val countsToMv: Float = ArrhythmiaClassifier.ADC_COUNTS_TO_MV,
     private val minPeakToPeak: Float = MIN_PEAK_TO_PEAK,
     private val saturationLevel: Float = SATURATION_LEVEL
 ) {
@@ -136,11 +140,17 @@ class SignalQualityAnalyzer(
         return diffs[diffs.size / 2] / p2p
     }
 
-    /** Mean |z| against the training scaler, mirroring `ArrhythmiaClassifier.normalizeECG`. */
+    /**
+     * Mean |z| against the training scaler, mirroring `ArrhythmiaClassifier.normalizeECG`
+     * including its counts-to-millivolts conversion — the scaler is in millivolts, so
+     * comparing raw counts against it measures the unit gap rather than distribution
+     * drift. In-distribution input reads near
+     * [ArrhythmiaClassifier.EXPECTED_DRIFT_SCORE].
+     */
     private fun distanceFromTraining(samples: ShortArray): Float {
         var sum = 0.0
         for (s in samples) {
-            sum += abs((s.toFloat() - ecgMean) / (ecgStd + EPSILON))
+            sum += abs((s.toFloat() * countsToMv - ecgMean) / (ecgStd + EPSILON))
         }
         return (sum / samples.size).toFloat()
     }

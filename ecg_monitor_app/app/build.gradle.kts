@@ -69,6 +69,7 @@ ksp {
 detekt {
     buildUponDefaultConfig = true
     allRules = false
+    config.setFrom(file("detekt.yml"))
     baseline = file("detekt-baseline.xml")
 }
 

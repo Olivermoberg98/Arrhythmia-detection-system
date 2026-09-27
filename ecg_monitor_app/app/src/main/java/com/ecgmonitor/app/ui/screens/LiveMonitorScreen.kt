@@ -61,6 +61,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.ble.ConnectionState
+import com.ecgmonitor.app.data.ml.ArrhythmiaClassifier
+import com.ecgmonitor.app.data.ml.MonitoringSummary
+import com.ecgmonitor.app.data.ml.RateFlag
+import com.ecgmonitor.app.data.ml.SignalQuality
 import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.MedicalCardBackground
 import com.ecgmonitor.app.ui.theme.MedicalCyan
@@ -70,6 +74,7 @@ import com.ecgmonitor.app.ui.theme.MedicalGreen
 import com.ecgmonitor.app.ui.theme.MedicalOrange
 import com.ecgmonitor.app.ui.theme.MedicalRed
 import com.ecgmonitor.app.ui.theme.MedicalTextSecondary
+import com.ecgmonitor.app.ui.theme.MedicalSafeGreen
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorUiState
 import com.ecgmonitor.app.ui.viewmodels.LiveMonitorViewModel
 import kotlinx.coroutines.delay
@@ -89,6 +94,8 @@ fun LiveMonitorScreen(
     val heartRate       by viewModel.heartRate.collectAsStateWithLifecycle()
     val isRecording     by viewModel.isRecording.collectAsStateWithLifecycle()
     val leadsOff        by viewModel.leadsOff.collectAsStateWithLifecycle()
+    val signalQuality   by viewModel.lastSignalQuality.collectAsStateWithLifecycle()
+    val modelHealth     by viewModel.monitoringSnapshot.collectAsStateWithLifecycle()
 
     // Ticker: recompose every second while recording so the duration display counts up.
     var tickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -144,6 +151,10 @@ fun LiveMonitorScreen(
                     (tickMs - currentSession!!.startTime) / 1000
                 } else 0
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ModelHealthCard(quality = signalQuality, health = modelHealth)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -374,6 +385,97 @@ private fun VitalSignsCard(
         }
     }
 }
+
+/**
+ * Live signal-quality and model-health readout.
+ *
+ * Drift is the headline number: the mean absolute z-distance of the incoming beat from
+ * the training scaler, so it reveals inputs the model was never trained on — most
+ * bluntly a units mismatch between firmware and model, which no amount of clean signal
+ * fixes. Far from [ArrhythmiaClassifier.EXPECTED_DRIFT_SCORE] means the classification
+ * badge should not be believed, however confident it looks.
+ *
+ * Green band is the training distribution's 5th–95th percentile, measured over the
+ * training beats rather than chosen by eye; orange is within a factor of two of it.
+ *
+ * Stays a placeholder until the first beat window arrives — beats only flow once the
+ * firmware detects R-peaks, so a flat or lead-off signal never populates this.
+ */
+@Composable
+private fun ModelHealthCard(quality: SignalQuality?, health: MonitoringSummary?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(
+                "Signal & Model Health",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MedicalTextSecondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (quality == null || health == null) {
+                Text("Waiting for first beat…", fontSize = 12.sp, color = MedicalTextSecondary)
+                return@Column
+            }
+
+            val drift = health.driftScore
+            val driftColor = when {
+                drift in DRIFT_BAND_LOW..DRIFT_BAND_HIGH -> MedicalSafeGreen
+                drift in (DRIFT_BAND_LOW / 2)..(DRIFT_BAND_HIGH * 2) -> MedicalOrange
+                else -> MedicalRed
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                HealthStat(
+                    "Quality",
+                    String.format(Locale.US, "%.2f", quality.score),
+                    if (quality.isUsable) MedicalSafeGreen else MedicalRed
+                )
+                HealthStat("Drift σ", String.format(Locale.US, "%.2f", drift), driftColor)
+                HealthStat(
+                    "Suppressed",
+                    "${health.suppressedEvents}",
+                    if (health.suppressedEvents == 0) MedicalTextSecondary else MedicalOrange
+                )
+                HealthStat("Beats", "${health.totalClassified}", MedicalCyan)
+            }
+
+            val notes = buildList {
+                if (quality.flags.isNotEmpty()) add(quality.flags.joinToString(", "))
+                if (health.rateFlag != RateFlag.NORMAL) add(health.rateFlag.name)
+                if (driftColor != MedicalSafeGreen) add("drift off training scale")
+            }
+            if (notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(notes.joinToString(" · "), fontSize = 11.sp, color = MedicalOrange)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthStat(label: String, value: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            value,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            color = color
+        )
+        Text(label, fontSize = 11.sp, color = MedicalTextSecondary)
+    }
+}
+
+private const val DRIFT_BAND_LOW = 0.24f
+private const val DRIFT_BAND_HIGH = 1.01f
 
 /**
  * A small status dot + label giving continuous leads feedback.

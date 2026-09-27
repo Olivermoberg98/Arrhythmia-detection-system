@@ -94,11 +94,30 @@ class SignalQualityAnalyzerTest {
     }
 
     @Test
-    fun `distanceFromTraining reports raw sigma distance without rescaling`() {
-        // Raw ADC-unit samples are far outside a scaler fitted on millivolts. The
-        // analyzer must report that honestly rather than normalising it away, since
-        // this is the metric that reveals a unit mismatch between firmware and model.
-        val quality = analyzer.analyze(window(cleanBeat()))
+    fun `distanceFromTraining lands in single sigmas once counts are converted to mV`() {
+        // A beat at a realistic electrode amplitude must sit within a few sigmas of the
+        // training scaler. Regression guard for the counts-vs-millivolts mismatch that
+        // put live inputs ~180 sigmas out and saturated the network.
+        val quality = analyzer.analyze(window(cleanBeat(MITBIH_SCALE)))
+
+        assertTrue(
+            "expected in-distribution drift, got ${quality.distanceFromTraining}",
+            quality.distanceFromTraining < PLAUSIBLE_DRIFT
+        )
+    }
+
+    @Test
+    fun `distanceFromTraining exposes a unit mismatch instead of rescaling it away`() {
+        // Same window, but with the conversion defeated — what the firmware would look
+        // like against a millivolt scaler if the units were wrong again. The metric is
+        // deliberately un-rescaled so this shows up rather than hiding.
+        val rawCounts = SignalQualityAnalyzer(
+            ecgMean = ECG_MEAN,
+            ecgStd = ECG_STD,
+            countsToMv = 1f
+        )
+
+        val quality = rawCounts.analyze(window(cleanBeat(MITBIH_SCALE)))
 
         assertTrue(
             "expected a large drift score, got ${quality.distanceFromTraining}",
@@ -122,7 +141,7 @@ class SignalQualityAnalyzerTest {
      * A crude but recognisable beat: quiet baseline, a sharp QRS spike at the centre,
      * and a small T-wave. Amplitude is comfortably above the flat-signal floor.
      */
-    private fun cleanBeat(): ShortArray = ShortArray(WINDOW) { i ->
+    private fun cleanBeat(scale: Float = 1f): ShortArray = ShortArray(WINDOW) { i ->
         val qrs = when (i) {
             QRS_CENTRE - 2 -> -60
             QRS_CENTRE - 1 -> 200
@@ -134,7 +153,7 @@ class SignalQualityAnalyzerTest {
         val tWave = if (i in T_START until T_END) {
             (sin((i - T_START) * PI / (T_END - T_START)) * 60).toInt()
         } else 0
-        (qrs + tWave).toShort()
+        ((qrs + tWave) * scale).toInt().toShort()
     }
 
     private fun window(samples: ShortArray) =
@@ -161,8 +180,21 @@ class SignalQualityAnalyzerTest {
         const val DRIFT_SLOPE = 4
 
         /**
-         * Correctly scaled input would sit around 1 sigma. Raw ADC units land orders of
-         * magnitude out, so anything above this confirms the metric is not rescaling.
+         * Scales the fixture's 670-count peak-to-peak up to roughly the 1.97 mV median
+         * of the MIT-BIH training beats, so drift is checked at a realistic amplitude.
+         */
+        const val MITBIH_SCALE = 4.27f
+
+        /**
+         * Converted input sits within a few training sigmas. The synthetic fixture is
+         * mostly flat baseline so it reads lower than the ~0.53 mean of real training
+         * beats; this is a sanity ceiling, not a distribution match.
+         */
+        const val PLAUSIBLE_DRIFT = 2f
+
+        /**
+         * Raw ADC counts against a millivolt scaler land orders of magnitude out, so
+         * anything above this confirms the metric is not rescaling the mismatch away.
          */
         const val LARGE_DRIFT = 10f
         const val TWO_PI = 2 * PI

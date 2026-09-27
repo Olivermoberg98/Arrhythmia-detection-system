@@ -1,0 +1,15 @@
+# Detekt overrides on top of the default ruleset (buildUponDefaultConfig = true).
+#
+# Jetpack Compose names @Composable functions in PascalCase by convention, which the
+# default naming and complexity rules read as violations. Exempting the annotation is
+# the standard Compose configuration and is what lets the FunctionNaming entries be
+# dropped from detekt-baseline.xml rather than growing with every new screen.
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+
+complexity:
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    ignoreAnnotated: ['Composable']
