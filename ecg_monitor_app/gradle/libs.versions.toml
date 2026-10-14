@@ -16,9 +16,6 @@ room = "2.6.1"
 coroutines = "1.7.3"
 serializationJson = "1.6.0"
 mpAndroidChart = "3.1.0"
-rxAndroidBle = "1.17.2"
-rxJava = "3.1.8"
-rxAndroid = "3.0.2"
 kable = "0.30.0"
 gson = "2.10.1"
 accompanist = "0.34.0"
@@ -55,9 +52,6 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 mpandroidchart = { group = "com.github.PhilJay", name = "MPAndroidChart", version.ref = "mpAndroidChart" }
-rxandroidble = { group = "com.polidea.rxandroidble3", name = "rxandroidble", version.ref = "rxAndroidBle" }
-rxjava = { group = "io.reactivex.rxjava3", name = "rxjava", version.ref = "rxJava" }
-rxandroid = { group = "io.reactivex.rxjava3", name = "rxandroid", version.ref = "rxAndroid" }
 kable-core = { module = "com.juul.kable:core", version.ref = "kable" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanist" }

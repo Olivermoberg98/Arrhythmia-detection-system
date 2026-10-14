@@ -16,13 +16,13 @@ processed dataset. See the bottom of this file for a helper snippet.
 
 INT8 quantization notes
 -----------------------
-  Full-integer (weights + activations) is used because:
-    - The ESP32's Xtensa LX6 has no SIMD FPU; INT8 convolutions run ~4×
-      faster and fit more easily in IRAM.
-    - TFLite Micro's optimised kernel set targets INT8.
-  Input/output tensors are kept as FLOAT32 so the C code feeds normalised
-  floats without any extra quantize/dequantize bookkeeping.
-  Set QUANTIZE_IO = True if you want INT8 I/O (saves a tiny bit of flash).
+  Full-integer (weights + activations) was originally chosen for on-ESP32
+  inference under TFLite Micro. Inference now runs in the Android app on the
+  phone, which doesn't need INT8, but the shipped thresholds were tuned
+  against this INT8 build — switching the app to the _f32 reference model is
+  a classifier behaviour change, not a free swap.
+  Input/output tensors are kept as FLOAT32 because ArrhythmiaClassifier.kt
+  feeds normalised floats with no quantize/dequantize step.
 """
 
 import argparse
@@ -34,7 +34,7 @@ import numpy as np
 import tensorflow as tf
 
 # --------------------------------------------------------------------------- #
-QUANTIZE_IO      = False   # Keep False unless you also update the C inference code
+QUANTIZE_IO      = False   # Keep False: the app feeds float32 tensors
 N_CALIB_SAMPLES  = 500     # Calibration samples for range estimation (200-1000 typical)
 RANDOM_SEED      = 42
 # --------------------------------------------------------------------------- #
@@ -75,7 +75,7 @@ def convert_float32(model: tf.keras.Model, out_path: Path) -> None:
 def convert_int8(model: tf.keras.Model,
                  X_ecg: np.ndarray, X_rr: np.ndarray,
                  out_path: Path) -> None:
-    """INT8 quantized model — production build for ESP32."""
+    """INT8 quantized model — production build loaded by the Android app."""
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
     converter.optimizations             = [tf.lite.Optimize.DEFAULT]
@@ -150,12 +150,12 @@ def print_next_steps(tflite_path: Path) -> None:
     print("\n" + "=" * 62)
     print("DONE.  Next steps:")
     print()
-    print("  STEP 2 — Generate C array (run in your project root):")
-    print(f"    xxd -i {tflite_path} | sed 's/unsigned/const unsigned/' \\")
-    print(f"        > src/ml/model_data.h")
+    print("  STEP 2 — Generate model_metadata.json:")
+    print("    python extract_constants.py --meta ... --ecg_scaler ... \\")
+    print("        --rr_scaler ... --results models/trained/results_<ts>.pkl")
     print()
-    print("  OR use the provided extract_constants.py which does both")
-    print("  xxd conversion AND scaler extraction in one shot.")
+    print(f"  STEP 3 — Copy {tflite_path.name} + model_metadata.json into")
+    print("    ecg_monitor_app/app/src/main/assets/")
     print("=" * 62)
 
 

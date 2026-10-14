@@ -46,7 +46,6 @@ android {
 
     buildFeatures {
         compose = true
-        viewBinding = true
     }
 
     packaging {
@@ -88,9 +87,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.mpandroidchart)
-    implementation(libs.rxandroidble)
-    implementation(libs.rxjava)
-    implementation(libs.rxandroid)
     implementation(libs.kable.core)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
