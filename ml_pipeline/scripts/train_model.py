@@ -38,8 +38,24 @@ Dual-input design:
   CNN processes ECG → GlobalAveragePooling → concatenate RR features → dense head
   RR features provide the temporal context that morphology alone cannot capture,
   especially for SVEB (premature beats with near-normal QRS morphology).
+
+Ensembles (--ensemble N) — why the shipped model averages several runs:
+  Identical training runs landed anywhere from 0.68 to 0.78 end-to-end DS2
+  macro-F1 (2026-10-14, 8 runs).  The spread comes from model selection, not
+  the architecture: checkpointing and threshold tuning both rest on only 4
+  validation records, so which epoch is kept and where the thresholds land
+  is close to a coin toss.  Picking the best run by its DS2 score would be
+  selecting on the test set.  Averaging the softmax of N independent runs
+  (Lakshminarayanan et al. 2017, "Simple and Scalable Predictive Uncertainty
+  Estimation using Deep Ensembles", NeurIPS) removes most of that variance:
+  a 4-run ensemble scored 0.764 vs a single-run mean of 0.743 +/- 0.025.
+  The members are wrapped in one Keras model (Average layer), so it converts
+  to a single TFLite with the same inputs/outputs; thresholds are tuned for
+  the ensemble on validation only.  Cost: N x model size and inference time
+  (4 runs: ~700 KB INT8, ~1.4 ms/beat on a desktop CPU).
 """
 
+import argparse
 import os
 import numpy as np
 import pickle
@@ -494,7 +510,8 @@ def evaluate(model, X_test, RR_test, y_test, class_names,
 # MAIN
 # ============================================================================
 
-def main():
+def main(arch_choice=None):
+    """Train one model. Returns (model_path, results_path)."""
     print("=" * 70)
     print("ARRHYTHMIA DETECTION MODEL TRAINING  (ECG + RR features)")
     print("=" * 70)
@@ -539,7 +556,7 @@ def main():
     print("1. Residual 1D CNN + RR  (~136K params)  ← RECOMMENDED")
     print("2. Standard 1D CNN + RR  (~47K params)")
     print("3. Lightweight CNN + RR  (~12K params, ESP32)")
-    choice = input("Choice (1/2/3): ").strip()
+    choice = arch_choice or input("Choice (1/2/3): ").strip()
 
     if choice == "2":
         model     = build_standard_model(beat_length, n_rr, num_classes)
@@ -707,7 +724,67 @@ def main():
     print(f"  probs = model.predict({{'ecg': X, 'rr': RR}})")
     print(f"  pred  = np.argmax(probs / np.array({list(thresholds.round(3))}), axis=1)")
     print(f"\nTensorBoard: tensorboard --logdir={LOGS_DIR}")
+    return model_path, results_path
+
+
+# ============================================================================
+# ENSEMBLE  (see module docstring)
+# ============================================================================
+
+def build_ensemble(member_paths):
+    """Average the softmax of trained members, tune thresholds on val, save."""
+    print("\n" + "=" * 70 + f"\nENSEMBLE OF {len(member_paths)} RUNS\n" + "=" * 70)
+    ((_, _, _), (X_val, RR_val, y_val), (X_test, RR_test, y_test),
+     metadata) = load_data()
+    class_names = [metadata['class_names'][i] for i in sorted(metadata['class_names'])]
+    num_classes = len(class_names)
+
+    ins = {'ecg': keras.Input((metadata['beat_length'],), name='ecg'),
+           'rr':  keras.Input((metadata['n_rr_features'],), name='rr')}
+    outs = []
+    for i, path in enumerate(member_paths):
+        member = keras.models.load_model(path, compile=False)
+        member._name = f'member_{i}'   # members share layer names otherwise
+        outs.append(member(ins))
+    model = keras.Model(ins, layers.Average(name='mean_probs')(outs),
+                        name='ensemble_ecg_rr')
+
+    thresholds = optimize_thresholds(model, X_val, RR_val, y_val, num_classes)
+    evaluate(model, X_test, RR_test, y_test, class_names,
+             thresholds=thresholds, label='Test (ensemble, threshold-tuned)')
+
+    timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_path = os.path.join(MODEL_DIR, f'model_ensemble_{timestamp}.keras')
+    model.save(model_path)
+    results = {
+        'timestamp'     : timestamp,
+        'architecture'  : f'ensemble of {len(member_paths)}',
+        'model_path'    : model_path,
+        'members'       : list(member_paths),
+        'beat_length'   : metadata['beat_length'],
+        'n_rr_features' : metadata['n_rr_features'],
+        'thresholds'    : thresholds.tolist(),
+        'metadata'      : metadata,
+    }
+    results_path = os.path.join(MODEL_DIR, f'results_ensemble_{timestamp}.pkl')
+    with open(results_path, 'wb') as f:
+        pickle.dump(results, f)
+    print(f"\nEnsemble saved : {model_path}\nResults        : {results_path}")
+    return model_path, results_path
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train the ECG + RR classifier")
+    parser.add_argument("--ensemble", type=int, default=1,
+                        help="train N runs and save their averaged ensemble (shipped: 4)")
+    args = parser.parse_args()
+
+    if args.ensemble <= 1:
+        main()
+    else:
+        plt.switch_backend('Agg')   # don't block on plot windows between runs
+        print("\nSelect architecture for all runs:")
+        print("1. Residual  2. Standard  3. Lightweight")
+        arch = input("Choice (1/2/3): ").strip()
+        members = [main(arch_choice=arch)[0] for _ in range(args.ensemble)]
+        build_ensemble(members)

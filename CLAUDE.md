@@ -84,8 +84,8 @@ python scripts/01_download_data.py      # MIT-BIH from PhysioNet (~100 MB)
 python scripts/02_explore_data.py
 python scripts/analyze_mitbih.py        # per-record AAMI class tallies + DS1/DS2 split comparison
 python scripts/preprocess.py
-python scripts/train_model.py
-python convert_model.py --model models/trained/model_<ts>.keras ...   # → INT8 + f32 TFLite in src/ml/
+python scripts/train_model.py --ensemble 4   # shipped config: 4 runs averaged; omit for a single run
+python convert_model.py --model models/trained/model_ensemble_<ts>.keras ...   # → INT8 + f32 TFLite in src/ml/
 python extract_constants.py --meta data/processed/metadata.pkl --ecg_scaler data/processed/ecg_scaler.pkl \
     --rr_scaler data/processed/rr_scaler.pkl --results models/trained/results_<ts>.pkl   # → src/ml/model_metadata.json
 ```
