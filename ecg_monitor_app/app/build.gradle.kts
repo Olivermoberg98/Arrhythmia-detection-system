@@ -46,7 +46,6 @@ android {
 
     buildFeatures {
         compose = true
-        viewBinding = true
     }
 
     packaging {
@@ -54,11 +53,22 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // Room exports a schema JSON per version. Shipping them as androidTest assets is
+    // what lets MigrationTestHelper build an old database and validate a migration.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 detekt {
     buildUponDefaultConfig = true
     allRules = false
+    config.setFrom(file("detekt.yml"))
     baseline = file("detekt-baseline.xml")
 }
 
@@ -77,9 +87,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.mpandroidchart)
-    implementation(libs.rxandroidble)
-    implementation(libs.rxjava)
-    implementation(libs.rxandroid)
     implementation(libs.kable.core)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -92,6 +99,7 @@ dependencies {
     implementation(libs.timber)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)

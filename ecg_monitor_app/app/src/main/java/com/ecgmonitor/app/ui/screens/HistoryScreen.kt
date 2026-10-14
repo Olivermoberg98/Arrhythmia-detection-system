@@ -228,7 +228,8 @@ private fun SessionCard(
             ) {
                 StatItem(label = "HR",    value = "${session.averageHeartRate}", unit = "BPM", color = MedicalGreen)
                 StatItem(label = "Beats", value = "${session.totalBeats}",       unit = "",    color = MedicalCyan)
-                val arrhythmiaCount = session.pvcCount + session.afibCount + session.otherArrhythmiaCount
+                val arrhythmiaCount = session.pvcCount + session.supraventricularCount +
+                    session.otherArrhythmiaCount
                 StatItem(
                     label = "Events",
                     value = "$arrhythmiaCount",
@@ -237,7 +238,7 @@ private fun SessionCard(
                 )
             }
 
-            if (session.pvcCount > 0 || session.afibCount > 0) {
+            if (session.pvcCount > 0 || session.supraventricularCount > 0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = MedicalTextSecondary.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -249,8 +250,12 @@ private fun SessionCard(
                     if (session.pvcCount > 0) {
                         ArrhythmiaChip(label = "PVC",  count = session.pvcCount,  color = MedicalRed)
                     }
-                    if (session.afibCount > 0) {
-                        ArrhythmiaChip(label = "AFib", count = session.afibCount, color = MedicalRed)
+                    if (session.supraventricularCount > 0) {
+                        ArrhythmiaChip(
+                            label = "SVEB",
+                            count = session.supraventricularCount,
+                            color = MedicalOrange
+                        )
                     }
                 }
             }

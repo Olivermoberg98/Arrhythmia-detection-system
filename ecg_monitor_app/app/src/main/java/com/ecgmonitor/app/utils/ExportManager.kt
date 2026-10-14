@@ -64,7 +64,7 @@ class ExportManager(private val context: Context) {
             paint.isFakeBoldText = false
             y = text("Normal Beats: ${session.normalBeats}",                 x = 70f)
             y = text("PVCs: ${session.pvcCount}",                            x = 70f)
-            y = text("AFib Events: ${session.afibCount}",                    x = 70f)
+            y = text("SVEB Events: ${session.supraventricularCount}",         x = 70f)
             y = text("Other Arrhythmias: ${session.otherArrhythmiaCount}",   x = 70f)
             y += 16f
 

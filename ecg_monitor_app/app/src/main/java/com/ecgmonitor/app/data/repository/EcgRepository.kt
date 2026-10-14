@@ -12,6 +12,7 @@ import com.ecgmonitor.app.data.models.ArrhythmiaType
 import com.ecgmonitor.app.data.models.DataSource
 import com.ecgmonitor.app.data.models.EcgReading
 import com.ecgmonitor.app.data.models.EcgSession
+import com.ecgmonitor.app.data.ml.MonitoringSummary
 import kotlinx.coroutines.flow.Flow
 import timber.log.Timber
 
@@ -31,6 +32,16 @@ class EcgRepository(
      */
     data class HeartRateStats(val avg: Int, val min: Int, val max: Int)
 
+    /**
+     * Derived per-session measurements supplied by the ViewModel: heart-rate statistics
+     * from beat detection, and classifier-health metrics from the monitoring layer.
+     * Both are absent for MIT-BIH imports, which are replayed rather than measured.
+     */
+    data class SessionMetrics(
+        val heartRate: HeartRateStats? = null,
+        val monitoring: MonitoringSummary? = null
+    )
+
     fun getAllSessions(): Flow<List<EcgSessionEntity>> = sessionDao.getAllSessions()
 
     suspend fun getSessionWithData(sessionId: String): SessionWithData? {
@@ -45,10 +56,11 @@ class EcgRepository(
         events: List<ArrhythmiaEvent>,
         sessionMetadata: EcgSession,
         sessionName: String? = null,
-        heartRateStats: HeartRateStats? = null
+        metrics: SessionMetrics = SessionMetrics()
     ): String {
         val sessionId = sessionMetadata.id
-        val stats = calculateSessionStatistics(events, heartRateStats)
+        val monitoring = metrics.monitoring
+        val stats = calculateSessionStatistics(events, metrics.heartRate, monitoring)
 
         val sessionEntity = EcgSessionEntity(
             id = sessionId,
@@ -65,9 +77,19 @@ class EcgRepository(
             totalBeats = stats.totalBeats,
             normalBeats = stats.normalBeats,
             pvcCount = stats.pvcCount,
-            afibCount = stats.afibCount,
+            supraventricularCount = stats.supraventricularCount,
             otherArrhythmiaCount = stats.otherArrhythmiaCount,
-            healthStatus = determineHealthStatus(stats)
+            healthStatus = determineHealthStatus(stats),
+            modelVersion = monitoring?.modelVersion,
+            meanConfidence = monitoring?.meanConfidence,
+            lowConfidenceRate = monitoring?.lowConfidenceRate,
+            meanEntropy = monitoring?.meanEntropy,
+            poorSignalRate = monitoring?.poorSignalRate,
+            suppressedEvents = monitoring?.suppressedEvents,
+            driftScore = monitoring?.driftScore,
+            classificationsPerMin = monitoring?.classificationsPerMin,
+            rateFlag = monitoring?.rateFlag?.name,
+            meanInferenceMs = monitoring?.meanInferenceMs
         )
 
         val readingEntities = readings.map { reading ->
@@ -160,15 +182,22 @@ class EcgRepository(
         val totalBeats: Int,
         val normalBeats: Int,
         val pvcCount: Int,
-        val afibCount: Int,
-        val otherArrhythmiaCount: Int
+        val supraventricularCount: Int,
+        val otherArrhythmiaCount: Int,
+        /** Beats classified but withheld by the quality gate, so left unattributed. */
+        val unattributedBeats: Int
     )
 
     private fun calculateSessionStatistics(
         events: List<ArrhythmiaEvent>,
-        providedHrStats: HeartRateStats? = null
+        providedHrStats: HeartRateStats? = null,
+        monitoring: MonitoringSummary? = null
     ): SessionStatistics {
-        val totalBeats = events.size
+        // `events` only ever holds abnormal beats — the live path returns early for
+        // normal ones — so it cannot stand in for the beat count. The monitor is the
+        // only source that saw every classified beat. MIT-BIH imports have no monitor,
+        // and there each event *is* a beat annotation, so events.size is correct.
+        val totalBeats = monitoring?.totalClassified ?: events.size
 
         // Prefer ViewModel-supplied HR stats (accurate beat detection).
         // Fall back to RR-from-events only for MIT-BIH imports where events
@@ -192,9 +221,19 @@ class EcgRepository(
             )
         }
 
-        val normalBeats = events.count { it.type == ArrhythmiaType.NORMAL }
         val pvcCount = events.count { it.type == ArrhythmiaType.VENTRICULAR }
-        val afibCount = events.count { it.type == ArrhythmiaType.SUPRAVENTRICULAR }
+        val supraventricularCount = events.count { it.type == ArrhythmiaType.SUPRAVENTRICULAR }
+        // The model is 3-class N/S/V, so there is no "other" bucket to fill.
+        val other = 0
+
+        // Suppressed beats were classified abnormal but failed the quality gate, so
+        // they have no trustworthy label and must not be counted as normal.
+        val unattributed = monitoring?.suppressedEvents ?: 0
+        val normalBeats = if (monitoring != null) {
+            (totalBeats - pvcCount - supraventricularCount - unattributed).coerceAtLeast(0)
+        } else {
+            events.count { it.type == ArrhythmiaType.NORMAL }
+        }
 
         return SessionStatistics(
             averageHeartRate = avgHR,
@@ -203,8 +242,9 @@ class EcgRepository(
             totalBeats = totalBeats,
             normalBeats = normalBeats,
             pvcCount = pvcCount,
-            afibCount = afibCount,
-            otherArrhythmiaCount = totalBeats - normalBeats - pvcCount - afibCount
+            supraventricularCount = supraventricularCount,
+            otherArrhythmiaCount = other,
+            unattributedBeats = unattributed
         )
     }
 
@@ -213,10 +253,16 @@ class EcgRepository(
             (stats.pvcCount.toFloat() / stats.totalBeats) * 100
         } else 0f
 
+        val svebPercentage = if (stats.totalBeats > 0) {
+            (stats.supraventricularCount.toFloat() / stats.totalBeats) * 100
+        } else 0f
+
+        // Was "any afibCount > 0 -> CONCERNING", which made sense for atrial
+        // fibrillation but not for the class S ectopics this actually counts —
+        // occasional SVEBs are common in healthy rhythm. Graded like PVCs instead.
         return when {
-            stats.afibCount > 0                                          -> HealthStatus.CONCERNING
-            pvcPercentage > 20                                           -> HealthStatus.CONCERNING
-            pvcPercentage > 10                                           -> HealthStatus.ATTENTION
+            pvcPercentage > 20 || svebPercentage > 20                    -> HealthStatus.CONCERNING
+            pvcPercentage > 10 || svebPercentage > 10                    -> HealthStatus.ATTENTION
             stats.averageHeartRate > 100 || stats.averageHeartRate < 50 -> HealthStatus.ATTENTION
             else                                                         -> HealthStatus.NORMAL
         }

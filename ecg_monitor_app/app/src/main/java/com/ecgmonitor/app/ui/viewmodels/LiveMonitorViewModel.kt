@@ -11,6 +11,10 @@ import com.ecgmonitor.app.data.ble.BeatWindow
 import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
 import com.ecgmonitor.app.data.ml.ArrhythmiaClassifier
+import com.ecgmonitor.app.data.ml.ClassificationMonitor
+import com.ecgmonitor.app.data.ml.MonitoringSummary
+import com.ecgmonitor.app.data.ml.SignalQuality
+import com.ecgmonitor.app.data.ml.SignalQualityAnalyzer
 import com.ecgmonitor.app.data.models.ClassificationResult
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
 import com.ecgmonitor.app.data.models.ArrhythmiaType
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
@@ -42,6 +47,29 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     private val classifier = ArrhythmiaClassifier(getApplication())
     private val _classificationResults = MutableStateFlow<ClassificationResult?>(null)
     val classificationResults: StateFlow<ClassificationResult?> = _classificationResults.asStateFlow()
+
+    /** Scores each beat window before its classification is trusted. */
+    private val qualityAnalyzer = SignalQualityAnalyzer(
+        ecgMean = classifier.modelMetadata.ecgMean,
+        ecgStd  = classifier.modelMetadata.ecgStd
+    )
+
+    /** Accumulates model-health metrics for the session being recorded. */
+    private val monitor = ClassificationMonitor(
+        modelVersion = classifier.modelMetadata.version
+    )
+
+    /** Signal quality of the most recent beat window. */
+    private val _lastSignalQuality = MutableStateFlow<SignalQuality?>(null)
+    val lastSignalQuality: StateFlow<SignalQuality?> = _lastSignalQuality.asStateFlow()
+
+    /** T/R amplitude ratio, the lead-placement diagnostic. Null until measurable. */
+    private val _tOverR = MutableStateFlow<Float?>(null)
+    val tOverR: StateFlow<Float?> = _tOverR.asStateFlow()
+
+    /** Rolling model-health snapshot, updated on every classified beat. */
+    private val _monitoringSnapshot = MutableStateFlow<MonitoringSummary?>(null)
+    val monitoringSnapshot: StateFlow<MonitoringSummary?> = _monitoringSnapshot.asStateFlow()
 
 
     /**
@@ -111,6 +139,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      */
     private var recordingSampleIndex = 0
 
+    /** ESP32 timestamp of the newest streamed sample, for back-dating beat events. */
+    @Volatile private var latestStreamTimestampMs = 0L
+
     // endregion
 
     // region Beat detection state
@@ -123,9 +154,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      * The min/max values are recomputed from scratch only when the evicted element
      * was the current extremum (O(n) at most twice per packet, amortised O(1)).
      */
-    private val rollingWindow          = ArrayDeque<Float>(ROLLING_WINDOW_SAMPLES)
-    private var rollingMin             = Float.MAX_VALUE
-    private var rollingMax             = Float.MIN_VALUE
+    /** Beats awaiting their T wave: (R-peak timestamp, R amplitude). */
+    private val pendingBeats = ArrayDeque<Pair<Long, Float>>()
+    private var smoothedTOverR = 0f
 
     /**
      * Timestamps (ms) of the last [MAX_BEAT_HISTORY] detected R-peaks,
@@ -151,49 +182,71 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         // ── Beat window classification: separate collector ───────────────────────
         // Classification runs on beat windows from ESP32. Each beat window contains
-        // 250 ECG samples + 3 RR features. TFLite runs on the Android device (~20-50ms).
+        // 128 ECG samples + 3 RR features, and arrives one RR interval after its R-peak
+        // (the firmware waits for post_rr). TFLite runs on the Android device (~20-50ms).
+        // Each window is scored for signal quality before its classification is trusted;
+        // see the quality-gate note in the "Classification & model monitoring" region.
         viewModelScope.launch(Dispatchers.Default) {
             bleManager.beatWindowFlow.collect { beatWindow ->
                 try {
-                    val result = classifier.classify(beatWindow)
+                    val quality = qualityAnalyzer.analyze(beatWindow)
+                    val result  = classifier.classify(beatWindow)
 
-                    // Update last classification result for UI badge
-                    _lastClassificationResult.value = result
-                    _classificationResults.value = result
-
-                    // Create arrhythmia event if valid and abnormal
-                    if (result.isValid && result.classId != 0) {
-                        val eventType = when (result.classId) {
-                            1 -> ArrhythmiaType.SUPRAVENTRICULAR
-                            2 -> ArrhythmiaType.VENTRICULAR
-                            else -> return@collect
-                        }
-
-                        val event = ArrhythmiaEvent(
-                            timestamp   = result.timestampMs,
-                            sampleIndex = recordingSampleIndex,
-                            type        = eventType,
-                            confidence  = result.confidence
-                        )
-
-                        // Add to visible events (limit to MAX_VISIBLE_EVENTS)
-                        val currentEvents = _visibleArrhythmiaEvents.value.toMutableList()
-                        currentEvents.add(event)
-                        if (currentEvents.size > MAX_VISIBLE_EVENTS) {
-                            currentEvents.removeAt(0)
-                        }
-                        _visibleArrhythmiaEvents.value = currentEvents
-
-                        // Add to recording buffer if recording
-                        if (_isRecording.value) {
-                            recordingEventsBuffer.add(event)
-                        }
-
-                        Timber.i(
-                            "Arrhythmia detected: ${result.className} " +
-                                    "(${(result.confidence * 100).toInt()}%) at ${result.timestampMs}ms"
+                    // Heart rate and T/R both key off the firmware's R-peak, which
+                    // is Pan-Tompkins with T-wave rejection. The app used to run its
+                    // own threshold detector for the HR display; on a signal with
+                    // T/R ~0.6 it counted T waves and read ~96% high.
+                    recordBeat(beatWindow.timestampMs)
+                    if (beatWindow.ecgSamples.size > BEAT_PRE_SAMPLES) {
+                        pendingBeats.addLast(
+                            beatWindow.timestampMs to
+                                abs(beatWindow.ecgSamples[BEAT_PRE_SAMPLES].toFloat())
                         )
                     }
+
+                    _lastSignalQuality.value        = quality
+                    _lastClassificationResult.value = result
+                    _classificationResults.value    = result
+
+                    val eventType = abnormalTypeOf(result)
+                    val suppressed = eventType != null && !quality.isUsable
+
+                    monitor.record(result, quality, suppressed)
+                    _monitoringSnapshot.value = monitor.snapshot()
+
+                    if (suppressed) {
+                        Timber.w(
+                            "Suppressed ${result.className} on beat #${result.beatNum} — " +
+                                    "quality ${"%.2f".format(quality.score)} ${quality.flags}"
+                        )
+                        return@collect
+                    }
+                    if (eventType == null) return@collect
+
+                    val event = ArrhythmiaEvent(
+                        timestamp   = result.timestampMs,
+                        sampleIndex = eventSampleIndex(result.timestampMs),
+                        type        = eventType,
+                        confidence  = result.confidence
+                    )
+
+                    // Add to visible events (limit to MAX_VISIBLE_EVENTS)
+                    val currentEvents = _visibleArrhythmiaEvents.value.toMutableList()
+                    currentEvents.add(event)
+                    if (currentEvents.size > MAX_VISIBLE_EVENTS) {
+                        currentEvents.removeAt(0)
+                    }
+                    _visibleArrhythmiaEvents.value = currentEvents
+
+                    // Add to recording buffer if recording
+                    if (_isRecording.value) {
+                        recordingEventsBuffer.add(event)
+                    }
+
+                    Timber.i(
+                        "Arrhythmia detected: ${result.className} " +
+                                "(${(result.confidence * 100).toInt()}%) at ${result.timestampMs}ms"
+                    )
                 } catch (e: Exception) {
                     Timber.e(e, "Classification failed for beat #${beatWindow.beatNum}")
                 }
@@ -269,6 +322,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 sampleIndex = recordingSampleIndex++
             )
         }
+        newReadings.lastOrNull()?.let { latestStreamTimestampMs = it.timestamp }
 
         // ── Visible window: use a pre-allocated ArrayDeque, never copy the full list ──
         // Previously: _ecgReadings.value.toMutableList() on every packet — a 3 000-element
@@ -282,57 +336,60 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         if (_isRecording.value) recordingBuffer.addAll(newReadings)
 
-        for (reading in newReadings) {
-            pushToRollingWindow(reading.voltage)
-            detectBeat(reading)
-        }
+        drainPendingTWaves()
     }
 
     // endregion
 
     // region Beat detection
 
-    /** Appends one sample to the rolling window, maintaining running min/max in O(1). */
-    private fun pushToRollingWindow(value: Float) {
-        if (rollingWindow.size >= ROLLING_WINDOW_SAMPLES) {
-            val evicted = rollingWindow.removeFirst()
-            // If the evicted value was the extremum, recompute from scratch (O(n)).
-            // This is rare — only when the global min/max falls off the window edge.
-            if (evicted <= rollingMin) rollingMin = if (rollingWindow.isEmpty()) Float.MAX_VALUE else rollingWindow.min()
-            if (evicted >= rollingMax) rollingMax = if (rollingWindow.isEmpty()) Float.MIN_VALUE else rollingWindow.max()
+    /**
+     * Computes the T/R amplitude ratio for beats whose T-wave has now streamed in.
+     *
+     * T/R is the diagnostic for lead placement: in a correct lead II the R wave
+     * dominates and the ratio sits around 0.1-0.3. A ratio near 1 means the QRS
+     * is not projecting onto the electrode axis, which both starves the
+     * classifier of the morphology it was trained on and leaves a threshold
+     * detector unable to separate T waves from R peaks.
+     *
+     * Deliberately scale-invariant, so it stays meaningful while the absolute
+     * gain calibration is unresolved.
+     *
+     * Beats are queued because the T wave arrives after the beat packet does.
+     */
+    private fun drainPendingTWaves() {
+        val latest = readingDeque.lastOrNull()?.timestamp ?: return
+
+        while (pendingBeats.isNotEmpty() &&
+            latest >= pendingBeats.first().first + T_WINDOW_END_MS
+        ) {
+            val (rTime, rAmplitude) = pendingBeats.removeFirst()
+            if (rAmplitude < MIN_R_AMPLITUDE) continue
+
+            val tAmplitude = peakInTWindow(rTime)
+            if (tAmplitude > 0f) updateTOverR(tAmplitude / rAmplitude)
         }
-        rollingWindow.addLast(value)
-        if (value < rollingMin) rollingMin = value
-        if (value > rollingMax) rollingMax = value
     }
 
-    /**
-     * Adaptive R-peak detector for raw int16 samples.
-     *
-     * Threshold = windowMin + [BEAT_THRESHOLD_FACTOR] × peak-to-peak amplitude of
-     * the last [ROLLING_WINDOW_SAMPLES] samples (1 second at 250 Hz).
-     * Self-calibrates to any ADC gain or electrode placement.
-     *
-     * Used only for the local heart-rate display. Classification comes from the
-     * ESP32 inference characteristic via [processInferenceResult].
-     */
-    private fun detectBeat(reading: EcgReading) {
-        if (rollingWindow.size < ROLLING_WINDOW_SAMPLES / 2) return
-
-        val amplitude = rollingMax - rollingMin
-        if (amplitude < MIN_SIGNAL_AMPLITUDE) return
-
-        val threshold = rollingMin + (amplitude * BEAT_THRESHOLD_FACTOR)
-        if (reading.voltage <= threshold) return
-
-        val timeSinceLastBeat = if (recentBeatTimestamps.isNotEmpty())
-            reading.timestamp - recentBeatTimestamps.last()
-        else
-            MIN_BEAT_INTERVAL_MS + 1L
-
-        if (timeSinceLastBeat >= MIN_BEAT_INTERVAL_MS) {
-            recordBeat(reading.timestamp)
+    /** Largest excursion in the T-wave window following an R-peak. */
+    private fun peakInTWindow(rTime: Long): Float {
+        var peak = 0f
+        for (reading in readingDeque) {
+            if (reading.timestamp - rTime in T_WINDOW_START_MS..T_WINDOW_END_MS) {
+                val magnitude = abs(reading.voltage)
+                if (magnitude > peak) peak = magnitude
+            }
         }
+        return peak
+    }
+
+    private fun updateTOverR(ratio: Float) {
+        smoothedTOverR = if (smoothedTOverR == 0f) {
+            ratio
+        } else {
+            TR_EMA_ALPHA * ratio + (1f - TR_EMA_ALPHA) * smoothedTOverR
+        }
+        _tOverR.value = smoothedTOverR
     }
 
     /**
@@ -364,11 +421,21 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    /**
+     * Recording index of a beat's R-peak. The firmware emits each beat at the next
+     * R-peak (it needs post_rr), so "now" is one RR interval past the beat.
+     */
+    private fun eventSampleIndex(rTimestampMs: Long): Int {
+        val lagSamples = ((latestStreamTimestampMs - rTimestampMs) * TARGET_FS / MS_PER_SECOND)
+            .toInt().coerceAtLeast(0)
+        return (recordingSampleIndex - 1 - lagSamples).coerceAtLeast(0)
+    }
+
     /** Clears all detector state — called on lead reconnect and packet gaps. */
     private fun resetBeatDetector() {
-        rollingWindow.clear()
-        rollingMin         = Float.MAX_VALUE
-        rollingMax         = Float.MIN_VALUE
+        pendingBeats.clear()
+        smoothedTOverR     = 0f
+        _tOverR.value      = null
         recentBeatTimestamps.clear()
         smoothedHeartRate  = 0f
     }
@@ -387,6 +454,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         recordingBuffer.clear()
         recordingEventsBuffer.clear()
         recordingHrSamples.clear()
+        monitor.reset()
+        _monitoringSnapshot.value = null
         recordingSampleIndex = 0
         recordingStartTime   = System.currentTimeMillis()
         _isRecording.value   = true
@@ -429,6 +498,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 )
             } else null
 
+            // Snapshot before the coroutine runs — the monitor keeps mutating on new beats.
+            val monitoringSummary = monitor.snapshot()
+
             viewModelScope.launch {
                 try {
                     val sessionId = repository.saveSession(
@@ -436,12 +508,19 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                         events          = recordingEventsBuffer.toList(),
                         sessionMetadata = session,
                         sessionName     = null,
-                        heartRateStats  = heartRateStats
+                        metrics         = EcgRepository.SessionMetrics(
+                            heartRate  = heartRateStats,
+                            monitoring = monitoringSummary
+                        )
                     )
                     syncManager.syncSessionAsync(sessionId)
                     Timber.i(
                         "Saved session $sessionId — ${recordingBuffer.size} samples, " +
-                                "${duration}s, HR avg=${heartRateStats?.avg}"
+                                "${duration}s, HR avg=${heartRateStats?.avg}, " +
+                                "model=${monitoringSummary.modelVersion} " +
+                                "lowConf=${"%.2f".format(monitoringSummary.lowConfidenceRate)} " +
+                                "drift=${"%.1f".format(monitoringSummary.driftScore)}σ " +
+                                "rate=${monitoringSummary.rateFlag}"
                     )
                     _uiState.value = LiveMonitorUiState.RecordingSaved(sessionId)
                 } catch (e: Exception) {
@@ -487,6 +566,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         _visibleArrhythmiaEvents.value = emptyList()
         _lastClassificationResult.value = null
         _classificationResults.value   = null
+        _lastSignalQuality.value       = null
         _heartRate.value               = 0
         _droppedPacketCount.value      = 0
         resetBeatDetector()
@@ -505,6 +585,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     companion object {
         /** Sampling rate the ESP32 ADC runs at. Must match firmware and the trained model. */
         private const val TARGET_FS = 250
+        private const val MS_PER_SECOND = 1000L
 
         /**
          * Samples kept in the live display buffer.
@@ -519,16 +600,18 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Rolling window for adaptive beat detection: 1 second of samples.
          * Threshold = windowMin + BEAT_THRESHOLD_FACTOR × peak-to-peak amplitude.
          */
-        private const val ROLLING_WINDOW_SAMPLES = 250
+        /** Index of the R-peak inside a beat window (96 pre + 32 post). */
+        private const val BEAT_PRE_SAMPLES = 96
 
-        /**
-         * R-peak threshold factor. A sample must be in the top (1 – 0.70) = 30% of the
-         * signal range. R-peaks typically occupy the top 15–20%, T-waves ~40–50%.
-         */
-        private const val BEAT_THRESHOLD_FACTOR = 0.70f
+        /** T-wave search window after the R-peak. */
+        private const val T_WINDOW_START_MS = 200L
+        private const val T_WINDOW_END_MS   = 420L
 
-        /** Minimum interval between beats (~200 bpm max). Rejects double-triggers. */
-        private const val MIN_BEAT_INTERVAL_MS  = 300L
+        /** R amplitude below which T/R is too ill-conditioned to report. */
+        private const val MIN_R_AMPLITUDE = 20f
+
+        /** EMA alpha for the T/R display — slower than HR, it is a setup diagnostic. */
+        private const val TR_EMA_ALPHA = 0.15f
 
         /** Number of recent RR intervals averaged for heart-rate calculation. */
         private const val MAX_BEAT_HISTORY      = 10
@@ -540,11 +623,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          */
         private const val HR_EMA_ALPHA = 0.25f
 
-        /**
-         * Minimum peak-to-peak amplitude (raw int16 units) below which the signal
-         * is treated as flat noise. Corresponds to ~1–2 mV depending on AD8232 gain.
-         */
-        private const val MIN_SIGNAL_AMPLITUDE = 50f
+
     }
 
     /**
@@ -554,6 +633,30 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      */
     private val readingDeque = ArrayDeque<EcgReading>(VISIBLE_WINDOW_SAMPLES)
 }
+
+// region Classification & model monitoring
+
+/**
+ * Maps a classification to the arrhythmia type it should raise, or null when the beat is
+ * normal or fell below the model's own confidence threshold.
+ *
+ * Emission is additionally gated on signal quality at the call site. That gate exists
+ * because a false alarm on noise is the costliest failure mode here: a clipped or
+ * motion-corrupted window can yield a confident abnormal prediction that is purely an
+ * artefact of the input.
+ *
+ * The rate plausibility check deliberately gates nothing — a high beat rate is exactly
+ * what a real tachyarrhythmia looks like, so it is surfaced through
+ * [com.ecgmonitor.app.data.ml.MonitoringSummary.rateFlag] rather than used to drop beats.
+ */
+private fun abnormalTypeOf(result: ClassificationResult): ArrhythmiaType? = when {
+    !result.isValid -> null
+    result.classId == ArrhythmiaType.SUPRAVENTRICULAR.classId -> ArrhythmiaType.SUPRAVENTRICULAR
+    result.classId == ArrhythmiaType.VENTRICULAR.classId      -> ArrhythmiaType.VENTRICULAR
+    else -> null
+}
+
+// endregion
 
 // region UI state
 

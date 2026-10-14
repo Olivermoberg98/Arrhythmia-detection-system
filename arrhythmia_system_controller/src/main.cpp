@@ -28,6 +28,10 @@ static void sensorTask(void* /*param*/) {
     int16_t ecgBatch[SamplingCfg::BLE_ECG_BATCH_SIZE];
     size_t  batchCount = 0;
 
+    // Lead-off debounce state.
+    uint32_t s_leadOffRun  = 0;
+    int16_t  s_lastGoodRaw = 0;
+
     for (;;) {
         const uint32_t now = millis();
 
@@ -37,7 +41,22 @@ static void sensorTask(void* /*param*/) {
             int16_t raw = 0;
             if (ecg.popSamples(&raw, 1) == 0) break;
 
-            const bool leadOff = !ecg.leadsOn() || (raw == INT16_MIN);
+            // Lead-off is debounced: the AD8232's comparators chatter on
+            // marginal contact, and a single-sample glitch must not tear down
+            // the detector's state. Brief glitches hold the last good sample so
+            // the filters and threshold keep tracking; only a sustained outage
+            // resets the chain and zeroes the stream.
+            const bool leadOffNow = !ecg.leadsOn() || (raw == INT16_MIN);
+
+            if (leadOffNow) {
+                if (s_leadOffRun < SamplingCfg::LEAD_OFF_DEBOUNCE_SAMPLES) s_leadOffRun++;
+            } else {
+                s_leadOffRun  = 0;
+                s_lastGoodRaw = raw;
+            }
+
+            const bool leadOff =
+                (s_leadOffRun >= SamplingCfg::LEAD_OFF_DEBOUNCE_SAMPLES);
 
             if (leadOff) {
                 processor.reset();
@@ -47,7 +66,8 @@ static void sensorTask(void* /*param*/) {
             if (leadOff) {
                 sampleToSend = 0;
             } else {
-                float filtered = processor.processSample(raw);
+                float filtered = processor.processSample(
+                    leadOffNow ? s_lastGoodRaw : raw);
                 sampleToSend   = static_cast<int16_t>(filtered);
             }
 
@@ -77,7 +97,13 @@ static void sensorTask(void* /*param*/) {
             if (!leadOff && processor.isBeatReady()) {
                 BLECfg::BeatPacket beatPkt = {};
                 beatPkt.marker       = 0xBE;
-                beatPkt.timestamp_ms = millis();
+                // config.h documents this as the R-peak timestamp, but it was
+                // millis() at send time — late by the post-R window plus the
+                // crest search. Back-date it so the app can align the beat to
+                // its own stream.
+                beatPkt.timestamp_ms = millis()
+                    - (processor.samplesSinceR() * 1000u
+                       / SamplingCfg::ECG_SAMPLE_RATE_HZ);
                 beatPkt.beat_num     = s_beatNum++;
                 
                 // Was hardcoded to 250 — overflowed beatPkt.ecg (int16_t[128]).

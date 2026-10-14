@@ -16,6 +16,9 @@ class ArrhythmiaClassifier(context: Context) {
     private val interpreter: Interpreter
     private val metadata: ModelMetadata
 
+    /** Exposed so the monitoring layer can score inputs against the training scaler. */
+    val modelMetadata: ModelMetadata get() = metadata
+
     init {
         // Load TFLite model
         val modelBuffer = FileUtil.loadMappedFile(context, "arrhythmia_model.tflite")
@@ -53,6 +56,7 @@ class ArrhythmiaClassifier(context: Context) {
         val rrScalerJson = json.getJSONObject("rr_scaler")
 
         return ModelMetadata(
+            version = json.optString("version", UNKNOWN_VERSION),
             beatLength = json.getInt("beat_length"),
             nRrFeatures = json.getInt("n_rr_features"),
             classes = classes,
@@ -76,9 +80,9 @@ class ArrhythmiaClassifier(context: Context) {
     fun classify(beatWindow: BeatWindow): ClassificationResult {
         val startTime = System.currentTimeMillis()
 
-        // Convert int16 ECG to float32
+        // ADC counts -> mV before normalising: the scaler was fit on MIT-BIH millivolts.
         val ecgFloat = FloatArray(beatWindow.ecgSamples.size) { i ->
-            beatWindow.ecgSamples[i].toFloat()
+            beatWindow.ecgSamples[i].toFloat() * ADC_COUNTS_TO_MV
         }
 
         // Normalize inputs
@@ -96,7 +100,7 @@ class ArrhythmiaClassifier(context: Context) {
         interpreter.runForMultipleInputsOutputs(inputs, outputs)
 
         val scores = output[0]
-        val classId = scores.indices.maxByOrNull { scores[it] } ?: 0
+        val classId = decide(scores, metadata.thresholds)
         val confidence = scores[classId]
         val isValid = confidence >= metadata.thresholds[classId]
 
@@ -134,10 +138,53 @@ class ArrhythmiaClassifier(context: Context) {
     fun close() {
         interpreter.close()
     }
+
+    companion object {
+        private const val UNKNOWN_VERSION = "unknown"
+
+        /**
+         * The decision rule the thresholds were tuned for in `train_model.py`:
+         * class = argmax(scores / thresholds). Plain argmax ignores them and
+         * under-calls the minority classes.
+         */
+        fun decide(scores: FloatArray, thresholds: FloatArray): Int =
+            scores.indices.maxByOrNull { scores[it] / thresholds[it] } ?: 0
+
+        /**
+         * Electrode-referred millivolts per raw ADC count, converting the firmware's
+         * beat window into the units `model_metadata.json`'s scaler was fit on.
+         *
+         * The training scaler comes from `wfdb.rdrecord(...).p_signal`, which is in
+         * millivolts, while the firmware ships `raw - ADC_MIDPOINT` in ADC counts
+         * (`ECGSensor.cpp`). Feeding counts straight into a millivolt scaler put inputs
+         * ~180 training sigmas out of range and saturated the network, which is what
+         * `SignalQualityAnalyzer.distanceFromTraining` exists to surface.
+         *
+         * Value = (ADC full scale / resolution) / AD8232 gain
+         *       = (3100 mV / 4096) / 1100 = 6.88e-4 mV per count
+         *
+         * 3100 mV is the ESP32-S3 12-bit ADC at 11 dB attenuation; 1100 is the SparkFun
+         * AD8232 breakout's total gain (internal instrumentation amp 100 x output stage
+         * 11). Gain is board-specific, so treat this as calibrated rather than exact:
+         * a clean recording should report a session `driftScore` near
+         * [EXPECTED_DRIFT_SCORE]. Persistently far off means this constant is wrong for
+         * the hardware, not that the signal is bad.
+         */
+        const val ADC_COUNTS_TO_MV = (3100f / 4096f) / 1100f
+
+        /**
+         * Mean |z| a beat drawn from the training distribution produces, measured over
+         * the 41,873 training beats (mean 0.54, 5th-95th percentile 0.24-1.02). The
+         * reference point for reading `driftScore`.
+         */
+        const val EXPECTED_DRIFT_SCORE = 0.54f
+    }
 }
 
 // Data classes
 data class ModelMetadata(
+    /** Model release from `model_metadata.json`, so health metrics attribute to a version. */
+    val version: String,
     val beatLength: Int,
     val nRrFeatures: Int,
     val classes: List<ClassInfo>,

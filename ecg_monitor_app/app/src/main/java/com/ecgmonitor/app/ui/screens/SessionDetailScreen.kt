@@ -377,7 +377,9 @@ private fun StatisticsSection(session: EcgSessionEntity, modifier: Modifier = Mo
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                 BeatStat("Normal", session.normalBeats, MedicalGreen)
                 BeatStat("PVC",    session.pvcCount,    MedicalRed)
-                if (session.afibCount > 0) BeatStat("AFib", session.afibCount, MedicalRed)
+                if (session.supraventricularCount > 0) {
+                    BeatStat("SVEB", session.supraventricularCount, MedicalOrange)
+                }
             }
 
             if (session.healthStatus != HealthStatus.NORMAL) {

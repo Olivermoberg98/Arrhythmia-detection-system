@@ -4,55 +4,8 @@
   <CurrentIssues>
     <ID>CyclomaticComplexMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
     <ID>CyclomaticComplexMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
-    <ID>FunctionNaming:CloudSyncCard.kt$@Composable fun CloudSyncCard(firebaseRepository: FirebaseRepository)</ID>
-    <ID>FunctionNaming:ConsentScreen.kt$@Composable fun ConsentScreen( onAccept: () -&gt; Unit, onDecline: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:ConsentScreen.kt$@Composable private fun ConsentSection(icon: ImageVector, title: String, body: String)</ID>
-    <ID>FunctionNaming:EcgChartComposable.kt$@Composable fun EcgChart( ecgReadings: List&lt;EcgReading&gt;, arrhythmiaEvents: List&lt;ArrhythmiaEvent&gt; = emptyList(), samplingRate: Int = 250, modifier: Modifier = Modifier )</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun ArrhythmiaChip(label: String, count: Int, color: Color)</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun EmptyHistoryState(modifier: Modifier = Modifier)</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun HealthStatusBadge(status: HealthStatus)</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun SessionCard( session: EcgSessionEntity, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@Composable private fun StatItem(label: String, value: String, unit: String, color: Color)</ID>
-    <ID>FunctionNaming:HistoryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun HistoryScreen( viewModel: HistoryViewModel, onSessionClick: (String) -&gt; Unit )</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun ConnectionStatusBanner(connectionState: ConnectionState)</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun LeadsStatusIndicator(leadsOff: Boolean, isStreaming: Boolean)</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun RecordingControls( isConnected: Boolean, isRecording: Boolean, onStartRecording: () -&gt; Unit, onStopRecording: () -&gt; Unit, onClearData: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun RecordingIndicator()</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun StatusMessage(message: String, isError: Boolean)</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@Composable private fun VitalSignsCard( heartRate: Int, isStreaming: Boolean, isRecording: Boolean, leadsOff: Boolean, recordingDuration: Long )</ID>
-    <ID>FunctionNaming:LiveMonitorScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LiveMonitorScreen( viewModel: LiveMonitorViewModel, onRecordingSaved: (String) -&gt; Unit )</ID>
-    <ID>FunctionNaming:NavigationHost.kt$@Composable fun NavigationHost()</ID>
-    <ID>FunctionNaming:NavigationHost.kt$@Composable private fun MainAppNavigation( consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun BeatStat(label: String, count: Int, color: Color)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun EventTimelineItem(event: ArrhythmiaEvent, onClick: () -&gt; Unit)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun EventTimelineSection( events: List&lt;ArrhythmiaEvent&gt;, currentFilter: EventFilter, onFilterClick: () -&gt; Unit, onEventClick: (ArrhythmiaEvent) -&gt; Unit, modifier: Modifier = Modifier, showFilterMenu: Boolean, onFilterMenuDismiss: () -&gt; Unit, onFilterSelect: (EventFilter) -&gt; Unit )</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun ExportStatusCard(message: String, isSuccess: Boolean, onDismiss: () -&gt; Unit)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun HealthAssessment(session: EcgSessionEntity)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun HealthStatusBadge(status: HealthStatus)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun PlaybackControls( playbackState: PlaybackState, playbackProgress: Float, onPlayPause: () -&gt; Unit, onStop: () -&gt; Unit, onSeek: (Float) -&gt; Unit )</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun StatColumn(label: String, value: String, unit: String, color: Color)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@Composable private fun StatisticsSection(session: EcgSessionEntity, modifier: Modifier = Modifier)</ID>
-    <ID>FunctionNaming:SessionDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SessionDetailScreen( sessionId: String, viewModel: SessionDetailViewModel, onBack: () -&gt; Unit, onDelete: (String) -&gt; Unit = {} )</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun DataPrivacyCard(consentManager: ConsentManager, syncManager: SyncManager)</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun ConnectionStatusCard(connectionState: ConnectionState, onDisconnect: () -&gt; Unit)</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun DeviceItem( device: BleDevice, isConnected: Boolean, isConnecting: Boolean, onClick: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun PermissionCard( permanentlyDenied: Boolean, onRequest: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun SettingRow(label: String, value: String)</ID>
-    <ID>FunctionNaming:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
-    <ID>FunctionNaming:Theme.kt$@Composable fun EcgMonitorTheme( content: @Composable () -&gt; Unit )</ID>
     <ID>LongMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
     <ID>LongMethod:BleManager.kt$BleManager$suspend fun connect(device: BleDevice)</ID>
-    <ID>LongMethod:CloudSyncCard.kt$@Composable fun CloudSyncCard(firebaseRepository: FirebaseRepository)</ID>
-    <ID>LongMethod:ConsentScreen.kt$@Composable fun ConsentScreen( onAccept: () -&gt; Unit, onDecline: () -&gt; Unit )</ID>
-    <ID>LongMethod:HistoryScreen.kt$@Composable private fun SessionCard( session: EcgSessionEntity, onClick: () -&gt; Unit )</ID>
-    <ID>LongMethod:HistoryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun HistoryScreen( viewModel: HistoryViewModel, onSessionClick: (String) -&gt; Unit )</ID>
-    <ID>LongMethod:LiveMonitorScreen.kt$@Composable private fun VitalSignsCard( heartRate: Int, isStreaming: Boolean, isRecording: Boolean, leadsOff: Boolean, recordingDuration: Long )</ID>
-    <ID>LongMethod:LiveMonitorScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LiveMonitorScreen( viewModel: LiveMonitorViewModel, onRecordingSaved: (String) -&gt; Unit )</ID>
-    <ID>LongMethod:NavigationHost.kt$@Composable fun NavigationHost()</ID>
-    <ID>LongMethod:NavigationHost.kt$@Composable private fun MainAppNavigation( consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
-    <ID>LongMethod:SessionDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SessionDetailScreen( sessionId: String, viewModel: SessionDetailViewModel, onBack: () -&gt; Unit, onDelete: (String) -&gt; Unit = {} )</ID>
-    <ID>LongMethod:SettingsScreen.kt$@Composable fun DataPrivacyCard(consentManager: ConsentManager, syncManager: SyncManager)</ID>
-    <ID>LongMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
     <ID>LongParameterList:SessionDetailScreen.kt$( events: List&lt;ArrhythmiaEvent&gt;, currentFilter: EventFilter, onFilterClick: () -&gt; Unit, onEventClick: (ArrhythmiaEvent) -&gt; Unit, modifier: Modifier = Modifier, showFilterMenu: Boolean, onFilterMenuDismiss: () -&gt; Unit, onFilterSelect: (EventFilter) -&gt; Unit )</ID>
     <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$100</ID>
     <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$1e-6f</ID>

@@ -35,6 +35,14 @@ namespace SamplingCfg {
     constexpr size_t BEAT_POST_SAMPLES   = 32;
     constexpr size_t BEAT_WINDOW_SAMPLES = BEAT_PRE_SAMPLES + BEAT_POST_SAMPLES; // 128
 
+    // Consecutive lead-off samples before the signal chain is torn down.
+    // The AD8232's DC leads-off comparators chatter on marginal electrode
+    // contact — a real recording showed 18 dropouts in 3.5 s, nearly all a
+    // single sample. Resetting on each one wipes the filters, beat buffer, RR
+    // history and adaptive threshold, so no beat ever survives to completion.
+    // Shorter glitches are ridden out by holding the last good sample.
+    constexpr uint32_t LEAD_OFF_DEBOUNCE_SAMPLES = 62;   // 250 ms @ 250 Hz
+
     // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
     constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
 
@@ -72,11 +80,35 @@ namespace FilterCfg {
     // Pan-Tompkins R-peak detector
     constexpr uint32_t REFRACTORY_SAMPLES = 50;   // 200 ms @ 250 Hz
     constexpr float    PT_THRESHOLD_INIT  = 500.0f;
-    constexpr float    PT_THRESHOLD_DECAY = 0.995f;
+
+    // Samples to keep searching for the MWI crest after the threshold is
+    // crossed. The threshold must be derived from the crest, not from the
+    // crossing, or each detection lowers the threshold and the detector
+    // ratchets down onto T waves.
+    constexpr uint32_t PT_SEARCH_SAMPLES = 25;    // 100 ms @ 250 Hz
+
+    // Running peak estimates: new = W * peak + (1 - W) * old.
+    constexpr float PT_PEAK_WEIGHT = 0.125f;
+
+    // Detection threshold = npki + FRAC * (spki - npki), floored at
+    // FLOOR_FRAC * spki so a run of noise updates cannot drag it down to
+    // where T waves qualify.
+    constexpr float PT_THRESHOLD_FRAC  = 0.25f;
+    constexpr float PT_THRESHOLD_FLOOR = 0.15f;
+
+    // The MWI crest lags the R-peak by the integrator's group delay: half of
+    // the 32-sample window plus the 5-point derivative. The beat window is
+    // defined relative to the R-peak, so the crest is shifted back by that
+    // delay and then snapped to the filtered signal's dominant deflection.
+    constexpr uint32_t PT_MWI_GROUP_DELAY = 18;   // 16 (MWI/2) + 2 (derivative)
+
+    // Half-width of the snap search, either side of the compensated crest.
+    // Kept under half a QRS width so it cannot reach the T wave.
+    constexpr uint32_t PT_RPEAK_SEARCH_HALF = 15;   // 60 ms @ 250 Hz
 }
 
 // ============================================================
-// ML / Inference — UPDATED for dual-input 3-class model
+// ML contract (inference runs in the app; these must match training)
 // ============================================================
 namespace MLCfg {
 
@@ -94,19 +126,11 @@ namespace MLCfg {
         "Ventricular",
     };
 
-    // Per-class thresholds — tuned on validation set (macro F1 = 0.772).
-    // Real values are baked into model_config.h by extract_constants.py;
-    // these defaults compile when model_config.h is not yet generated.
-    constexpr float DEFAULT_THRESHOLDS[NUM_CLASSES] = {
-        0.234f,  // Normal
-        0.050f,  // Supraventricular
-        0.050f,  // Ventricular
-    };
-
     // RR features fed to model input 1: [pre_rr_norm, post_rr_norm, ratio_rr]
     constexpr uint8_t N_RR_FEATURES   = 3;
-    constexpr size_t  RR_MEAN_WINDOW  = 8;    // beats used for running mean RR
-    constexpr float   RR_CLAMP_SIGMA  = 4.0f; // outlier clamp before normalisation
+    // Mean RR = mean of the last RR_MEAN_WINDOW intervals up to pre_rr.
+    // Must match preprocess.py RR_MEAN_WINDOW.
+    constexpr size_t  RR_MEAN_WINDOW  = 8;
 }
 
 // ============================================================

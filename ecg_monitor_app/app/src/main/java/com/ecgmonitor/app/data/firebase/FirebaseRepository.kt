@@ -118,11 +118,22 @@ class FirebaseRepository {
         "totalBeats"           to session.totalBeats,
         "normalBeats"          to session.normalBeats,
         "pvcCount"             to session.pvcCount,
-        "afibCount"            to session.afibCount,
+        "supraventricularCount" to session.supraventricularCount,
         "otherArrhythmiaCount" to session.otherArrhythmiaCount,
         "healthStatus"         to session.healthStatus.name,
         "totalSamples"         to session.totalSamples,
-        "uploadedAt"           to System.currentTimeMillis()
+        "uploadedAt"           to System.currentTimeMillis(),
+        // Model-health scalars. Aggregates only — consistent with the metadata-only split.
+        "modelVersion"          to session.modelVersion,
+        "meanConfidence"        to session.meanConfidence,
+        "lowConfidenceRate"     to session.lowConfidenceRate,
+        "meanEntropy"           to session.meanEntropy,
+        "poorSignalRate"        to session.poorSignalRate,
+        "suppressedEvents"      to session.suppressedEvents,
+        "driftScore"            to session.driftScore,
+        "classificationsPerMin" to session.classificationsPerMin,
+        "rateFlag"              to session.rateFlag,
+        "meanInferenceMs"       to session.meanInferenceMs
     )
 
     /** Arrhythmia events written in batches (Firestore limit: 500 per batch). */

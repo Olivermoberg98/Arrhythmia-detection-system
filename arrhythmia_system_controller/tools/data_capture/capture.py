@@ -5,7 +5,7 @@ Usage:
     python capture.py --port COM3 --duration 60 --out raw_ecg.csv
 
 Expects CSV lines from the ESP32 debug build:
-    timestamp_ms,ecg_raw,ecg_filtered,ir_raw,red_raw,spo2,hr
+    timestamp_ms,ecg_raw,ecg_filtered
 
 Writes a clean CSV file with:
   - Header validation
@@ -164,7 +164,7 @@ def capture(port: str, duration: float, out_path: Path):
 # ---- CLI -------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Capture ECG/PPG data from ESP32 over Serial."
+        description="Capture ECG data from ESP32 over Serial."
     )
     parser.add_argument("--port",     type=str,   default=None,
                         help="Serial port (e.g. COM3 or /dev/ttyUSB0). "

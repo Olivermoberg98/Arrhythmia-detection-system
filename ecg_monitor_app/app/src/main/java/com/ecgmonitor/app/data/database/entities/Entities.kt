@@ -22,12 +22,44 @@ data class EcgSessionEntity(
     val totalBeats: Int,
     val normalBeats: Int,
     val pvcCount: Int,
-    val afibCount: Int,
+    /**
+     * Supraventricular ectopic beats (AAMI class S), not atrial fibrillation. The
+     * model is 3-class N/S/V and has no AFib output; the old `afibCount` name claimed
+     * a diagnosis the classifier cannot make.
+     */
+    val supraventricularCount: Int,
     val otherArrhythmiaCount: Int,
     val healthStatus: HealthStatus,
     val notes: String? = null,
     /** Timestamp of a successful cloud upload; null means the session is still pending sync. */
-    val uploadedAt: Long? = null
+    val uploadedAt: Long? = null,
+
+    // region Model health metrics
+    //
+    // Aggregate classifier-health scalars for this session. All nullable: sessions
+    // recorded before schema v4, and MIT-BIH imports, have no monitoring data.
+
+    /** Model release that produced this session's classifications. */
+    val modelVersion: String? = null,
+    /** Mean top-class confidence across all classified beats. */
+    val meanConfidence: Float? = null,
+    /** Fraction of beats falling below the model's own per-class threshold. */
+    val lowConfidenceRate: Float? = null,
+    /** Mean normalised prediction entropy (0 = decisive, 1 = uniform guess). */
+    val meanEntropy: Float? = null,
+    /** Fraction of beats whose signal quality failed the usability gate. */
+    val poorSignalRate: Float? = null,
+    /** Abnormal classifications withheld because signal quality was too poor to trust. */
+    val suppressedEvents: Int? = null,
+    /** Mean absolute z-distance of inputs from the training scaler, in training sigmas. */
+    val driftScore: Float? = null,
+    /** Mean beats classified per minute across the session. */
+    val classificationsPerMin: Float? = null,
+    /** Plausibility verdict on the classification rate (see `RateFlag`). */
+    val rateFlag: String? = null,
+    /** Mean TFLite inference time per beat. */
+    val meanInferenceMs: Float? = null
+    // endregion
 )
 
 enum class HealthStatus {
