@@ -32,6 +32,11 @@ static void sensorTask(void* /*param*/) {
     uint32_t s_leadOffRun  = 0;
     int16_t  s_lastGoodRaw = 0;
 
+    // Settling window after power-up / leads-on: the chain keeps running (the
+    // detector learns through it), but no beat whose window overlaps it is sent.
+    uint32_t s_settleLeft  = SamplingCfg::LEAD_ON_SETTLE_SAMPLES;
+    uint32_t s_settledFor  = 0;   // samples since settling ended
+
     for (;;) {
         const uint32_t now = millis();
 
@@ -60,6 +65,8 @@ static void sensorTask(void* /*param*/) {
 
             if (leadOff) {
                 processor.reset();
+                s_settleLeft = SamplingCfg::LEAD_ON_SETTLE_SAMPLES;
+                s_settledFor = 0;
             }
 
             int16_t sampleToSend;
@@ -69,7 +76,15 @@ static void sensorTask(void* /*param*/) {
                 float filtered = processor.processSample(
                     leadOffNow ? s_lastGoodRaw : raw);
                 sampleToSend   = static_cast<int16_t>(filtered);
+
+                if (s_settleLeft > 0) s_settleLeft--;
+                else if (s_settledFor < UINT32_MAX) s_settledFor++;
             }
+
+            // Beats are emitted one RR late, so a beat sent after settling can
+            // still have its window inside the transient: drop those too.
+            const bool beatSettled = s_settleLeft == 0 &&
+                processor.samplesSinceR() + SamplingCfg::BEAT_PRE_SAMPLES <= s_settledFor;
 
 // #if ENABLE_SERIAL_CAPTURE
 //             Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
@@ -94,7 +109,7 @@ static void sensorTask(void* /*param*/) {
             }
 
             // ── Send beat window when ready ──────────────────────────────────────
-            if (!leadOff && processor.isBeatReady()) {
+            if (!leadOff && beatSettled && processor.isBeatReady()) {
                 BLECfg::BeatPacket beatPkt = {};
                 beatPkt.marker       = 0xBE;
                 // config.h documents this as the R-peak timestamp, but it was

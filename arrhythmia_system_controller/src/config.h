@@ -43,6 +43,11 @@ namespace SamplingCfg {
     // Shorter glitches are ridden out by holding the last good sample.
     constexpr uint32_t LEAD_OFF_DEBOUNCE_SAMPLES = 62;   // 250 ms @ 250 Hz
 
+    // Samples after power-up or leads-on before beats are emitted. The AD8232's
+    // ~0.5 Hz analogue high-pass (plus fast restore) and the digital HP both
+    // need several time constants (~0.3 s each) to settle after a step.
+    constexpr uint32_t LEAD_ON_SETTLE_SAMPLES = 500;     // 2 s @ 250 Hz
+
     // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
     constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
 
