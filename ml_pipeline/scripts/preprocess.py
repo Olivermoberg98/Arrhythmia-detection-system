@@ -3,6 +3,7 @@ Script 03: Preprocess ECG Data
 
 This version:
 ✔ Patient-level splits following de Chazal et al. (2004) DS1/DS2 standard
+✔ The AD8232 board's analogue filters, modelled at 360 Hz (see "Firmware parity")
 ✔ Exact rational downsample 360 → 250 Hz (resample_poly, factor 25/36)
 ✔ The firmware's own causal filter chain at 250 Hz (see "Firmware parity")
 ✔ R-peaks snapped to the filtered signal exactly as the firmware does
@@ -120,15 +121,30 @@ filters shift and reshape the waveform (phase response, HP undershoot after
 the QRS, the notch's ~4% passband gain), so the CNN was learning a
 morphology the device never produces.
 
-The pipeline is therefore: raw MIT-BIH (360 Hz) → resample_poly to 250 Hz
-(stands in for the AD8232's analogue anti-alias stage + ADC) → the exact
-config.h biquad coefficients, applied causally with lfilter.  Annotated
+The pipeline is therefore: raw MIT-BIH (360 Hz) → the AD8232 board's
+analogue response (below) → resample_poly to 250 Hz (stands in for the ADC)
+→ the exact config.h biquad coefficients, applied causally with lfilter.  Annotated
 R-peaks are then snapped to the largest |filtered| sample within
 ±RPEAK_SNAP_HALF, which is the final step of the firmware's detector, so
 window alignment matches too.  Filter coefficients and RR_MEAN_WINDOW are
 duplicated from config.h and must be kept in sync by hand.
 
-Not modelled: the AD8232 board's own analogue filtering and gain spread.
+The analogue stage matters because the board filters before the firmware
+does, so the device signal is filtered twice.  The breakout (SparkFun
+SEN-12650 clone, "V502") carries the resistor set of the AD8232 datasheet's
+Figure 66 "Cardiac Monitor" circuit (10 MΩ, 1.5 MΩ, 1 MΩ, 100 kΩ, read off
+the board; capacitors are unmarked and taken from the figure):
+  - 2-pole HP (Figure 56 topology): fc = 10 / (2π·√(R1C1R2C2)) = 0.48 Hz,
+    R1 = R2 = 10 MΩ, C1 = C2 = 0.33 µF, RCOMP ≈ 0.14·R1 → maximally flat
+  - 2-pole Sallen-Key LP: R1 = R2 = 1 MΩ, C1 = 1.5 nF, C2 = 10 nF, gain 11
+    → fc = 41.1 Hz, Q = 0.775 (datasheet Q formula)
+  - total gain 1100 (handled by ADC_COUNTS_TO_MV in the app, not here)
+It is applied causally at the native 360 Hz (bilinear transform, prewarped
+at each corner), i.e. where it sits physically: before sampling.
+MIT-BIH was itself recorded through a 0.1–100 Hz analogue chain, so this
+approximates the device's view of the same heart.
+
+Not modelled: component tolerances and board-to-board gain spread.
 ─────────────────────────────────────────────────────────────────────────────
 
 Asymmetric Window — why 96 pre / 32 post instead of 64 / 64:
@@ -181,6 +197,12 @@ BEAT_LENGTH        = WINDOW_SIZE_BEFORE + WINDOW_SIZE_AFTER   # 128
 
 # Number of RR interval features appended to each beat
 N_RR_FEATURES = 3   # pre_rr_norm, post_rr_norm, ratio_rr
+
+# AD8232 board analogue response (datasheet Figure 66, see docstring).
+AD8232_HP_HZ = 0.482
+AD8232_HP_Q  = 0.707
+AD8232_LP_HZ = 41.1
+AD8232_LP_Q  = 0.775
 
 # Firmware filter chain — copied from config.h FilterCfg, fs = 250 Hz.
 LOWCUT  = 0.5    # HP corner (metadata only)
@@ -238,6 +260,22 @@ CLASS_NAMES = {0: 'Normal', 1: 'Supraventricular', 2: 'Ventricular'}
 # ============================================================================
 # SIGNAL PROCESSING
 # ============================================================================
+
+def _analog_biquad(kind, f0, q, fs):
+    """Bilinear-discretised 2nd-order analogue section, prewarped at f0."""
+    w0 = 2 * fs * np.tan(np.pi * f0 / fs)
+    a = [1.0, w0 / q, w0 * w0]
+    b = [1.0, 0.0, 0.0] if kind == 'high' else [0.0, 0.0, w0 * w0]
+    return signal.bilinear(b, a, fs)
+
+
+def ad8232_analog(ecg_360):
+    """The AD8232 board's 2-pole HP + 2-pole LP, causal, at the native rate."""
+    b, a = _analog_biquad('high', AD8232_HP_HZ, AD8232_HP_Q, ORIGINAL_FS)
+    x = signal.lfilter(b, a, ecg_360)
+    b, a = _analog_biquad('low', AD8232_LP_HZ, AD8232_LP_Q, ORIGINAL_FS)
+    return signal.lfilter(b, a, x)
+
 
 def downsample_signal(ecg):
     """Downsample 360 → 250 Hz using exact rational resampling (25/36)."""
@@ -332,7 +370,7 @@ def process_record(record_num, channel=0):
     """
     Full pipeline for one MIT-BIH record:
       1. Load raw ECG + annotations
-      2. Downsample to 250 Hz
+      2. AD8232 analogue response, then downsample to 250 Hz
       3. Firmware filter chain (causal biquads)
       4. First pass: every annotated beat, R-peak snapped like the firmware
       5. Compute RR features from that full beat sequence
@@ -349,7 +387,7 @@ def process_record(record_num, channel=0):
         annotation = wfdb.rdann(record_path, 'atr')
         ecg_signal = record.p_signal[:, channel]
 
-        ecg_resampled = firmware_filter(downsample_signal(ecg_signal))
+        ecg_resampled = firmware_filter(downsample_signal(ad8232_analog(ecg_signal)))
 
         # ── First pass: every annotated beat, including discarded classes ──
         # The firmware detects F/Q/paced beats too, so their timing must stay
@@ -573,7 +611,7 @@ def save_data(X_train, RR_train, y_train,
         'resample_ratio' : f'{RESAMPLE_UP}/{RESAMPLE_DOWN}',
         'lowcut_hz'      : LOWCUT,
         'highcut_hz'     : HIGHCUT,
-        'filter'         : 'firmware causal biquads (config.h FilterCfg)',
+        'filter'         : 'AD8232 Fig. 66 analogue + firmware causal biquads',
         'rr_mean_window' : RR_MEAN_WINDOW,
         'train_records'  : TRAIN_RECORDS,
         'val_records'    : VAL_RECORDS,

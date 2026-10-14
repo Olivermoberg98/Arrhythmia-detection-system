@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **`ecg_monitor_app/` has its own CLAUDE.md** with app-level architecture, conventions and build commands. Read it before touching Android code; don't duplicate its content here.
 
-Hardware: ESP32-S3-N16R8 camera board + AD8232 single-lead ECG module + disposable electrodes, USB-powered. **ECG only — there is no PPG/MAX30102 and none is planned.** Training data: MIT-BIH Arrhythmia Database (PhysioNet, Goldberger et al. 2000), via the WFDB library.
+Hardware: ESP32-S3-N16R8 camera board + AD8232 single-lead ECG module (red "AD8232 Heart Monitor" V502, a SparkFun SEN-12650 clone built on the datasheet's Figure 66 cardiac-monitor circuit: analogue 2-pole HP 0.48 Hz, 2-pole LP 41 Hz, gain 1100) + disposable electrodes, USB-powered. **ECG only — there is no PPG/MAX30102 and none is planned.** Training data: MIT-BIH Arrhythmia Database (PhysioNet, Goldberger et al. 2000), via the WFDB library.
 
 ## Where inference runs (decided)
 
@@ -40,7 +40,7 @@ These constants are duplicated across C++, Python, JSON and Kotlin. Changing one
 | RR features | 3: `[pre_rr_norm, post_rr_norm, ratio_rr]`; norm = mean of the last 8 RR intervals up to `pre_rr`; `post_rr` is real, so each beat is emitted at the **next** R-peak; first/last beat dropped | `config.h` `MLCfg::RR_MEAN_WINDOW`, `SignalProcessor.cpp`, `preprocess.py::compute_rr_features`, `validate.py` |
 | R-peak position | Snapped to max \|filtered\| within ±15 samples | `config.h` `FilterCfg::PT_RPEAK_SEARCH_HALF`, `preprocess.py::snap_rpeak` |
 | Classes | 3: 0=Normal, 1=Supraventricular, 2=Ventricular | `config.h` `MLCfg::Classification`, `model_metadata.json` |
-| Filters | HP 0.5 Hz, LP 40 Hz, notch 50 Hz (2nd-order biquads @ 250 Hz, **causal**) — training applies the identical coefficients with `lfilter` after resampling to 250 Hz | `config.h` `FilterCfg`, copied into `preprocess.py` (`FW_*`) and `tools/data_capture/validate.py` |
+| Filters | Board (analogue): HP 0.48 Hz + LP 41.1 Hz (Q 0.775), both 2-pole, modelled in `preprocess.py::ad8232_analog` at 360 Hz. Firmware: HP 0.5 Hz, LP 40 Hz, notch 50 Hz (2nd-order biquads @ 250 Hz, **causal**) — training applies the identical coefficients with `lfilter` after resampling to 250 Hz | `config.h` `FilterCfg`, copied into `preprocess.py` (`FW_*`) and `tools/data_capture/validate.py` |
 | Decision rule | `class = argmax(probs / thresholds)` — what `train_model.py` tunes the thresholds for | `train_model.py::optimize_thresholds`, `ArrhythmiaClassifier.decide` |
 | ECG units | Firmware ships ADC counts (`raw - 2048`); the scaler is in **millivolts** — convert before normalising | `ArrhythmiaClassifier.ADC_COUNTS_TO_MV` = (3100/4096)/1100, board-gain dependent |
 | Normalisation | ECG mean/std + per-feature RR mean/std | `model_metadata.json` (app) — training stats only, no leakage |
@@ -50,9 +50,9 @@ These constants are duplicated across C++, Python, JSON and Kotlin. Changing one
 
 `arrhythmia_system_controller/tools/data_capture/validate.py` is a fifth copy of the beat-window, RR-feature and ADC→mV constants (it mirrors `ArrhythmiaClassifier.classify` offline, and checks `model_metadata.json`'s shape fields on load). Keep it in sync too.
 
-**Training reproduces the firmware, not the other way round.** `preprocess.py` resamples raw MIT-BIH to 250 Hz, runs the firmware's causal biquads, snaps annotated R-peaks like the detector, and computes RR features with the firmware's running mean (rationale in its "Firmware parity" docstring section). Verified by compiling the real `SignalProcessor.cpp` on the host and feeding it MIT-BIH: where the emulated ADC doesn't clip, beat windows match training to ~1 µV (int16 truncation) and R-peaks land on the same sample for >99% of beats.
+**Training reproduces the firmware, not the other way round.** `preprocess.py` applies the board's analogue filters to raw MIT-BIH, resamples to 250 Hz, runs the firmware's causal biquads, snaps annotated R-peaks like the detector, and computes RR features with the firmware's running mean (rationale in its "Firmware parity" docstring section). Verified by compiling the real `SignalProcessor.cpp` on the host and feeding it MIT-BIH: where the emulated ADC doesn't clip, beat windows match training to ~1 µV (int16 truncation) and R-peaks land on the same sample for >99% of beats.
 
-Known residuals: the AD8232 board's own analogue filtering isn't modelled, and the ADC saturates at ±1.41 mV electrode-referred (12-bit, gain 1100) — large QRS complexes clip on the device but not in training.
+Known residuals: the board's capacitor values are unmarked (taken from datasheet Figure 66) and component tolerances aren't modelled; the ADC saturates at ±1.41 mV electrode-referred (12-bit, gain 1100) — large QRS complexes clip on the device but not in training.
 
 ## Signal chain / lead configuration
 
