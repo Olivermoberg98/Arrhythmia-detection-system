@@ -3,9 +3,10 @@ Script 03: Preprocess ECG Data
 
 This version:
 ✔ Patient-level splits following de Chazal et al. (2004) DS1/DS2 standard
-✔ Zero-phase filtering at original 360 Hz
 ✔ Exact rational downsample 360 → 250 Hz (resample_poly, factor 25/36)
-✔ Asymmetric beat window: 187 pre / 63 post = 250 samples total
+✔ The firmware's own causal filter chain at 250 Hz (see "Firmware parity")
+✔ R-peaks snapped to the filtered signal exactly as the firmware does
+✔ Asymmetric beat window: 96 pre / 32 post = 128 samples total
 ✔ RR interval features appended alongside morphology (3 features per beat)
 ✔ Normalization after splitting (train stats only — no leakage)
 ✔ 3-CLASS OUTPUT: Normal (N), Supraventricular (S), Ventricular (V)
@@ -84,12 +85,50 @@ This is well established: de Chazal et al. (2004) showed RR features alone
 achieve ~70% SVEB sensitivity.  Combining them with CNN morphology features
 is the standard approach in all high-performing inter-patient classifiers.
 
-Three RR features are computed per beat (from annotation sample indices):
-  1. pre_rr_norm  = (time since last beat) / mean_rr_of_record
-  2. post_rr_norm = (time until next beat) / mean_rr_of_record
+Three RR features are computed per beat (from snapped R-peak positions):
+  1. pre_rr_norm  = (time since last beat) / local_mean_rr
+  2. post_rr_norm = (time until next beat) / local_mean_rr
   3. ratio_rr     = pre_rr / post_rr
 
+local_mean_rr is the mean of the last RR_MEAN_WINDOW (8) intervals up to and
+including pre_rr — the same causal running mean the firmware keeps. It used to
+be the whole-record mean, which the firmware cannot know: a 30-minute average
+vs an 8-beat one gives different values whenever the rate drifts. 8 beats
+(~6-8 s) is close to de Chazal et al.'s (2004) ~10 s "local average RR".
+
+post_rr needs the next beat, so the firmware holds each beat until the next
+R-peak is detected (one RR interval of latency) rather than approximating it.
+An earlier firmware sent post_rr = pre_rr, which made ratio_rr a constant 1
+and threw away the compensatory-pause cue below.
+
+RR timing uses EVERY annotated beat, including the F/Q/paced beats that are
+then dropped as labels: the firmware's detector sees those beats too, so
+skipping them would make one interval span two beats. Beats without both a
+predecessor and a successor (first/last in the record) are dropped, matching
+the firmware, which never emits them.
+
 These are then StandardScaler-normalized using training statistics only.
+─────────────────────────────────────────────────────────────────────────────
+
+Firmware parity — why training reproduces the ESP32 signal chain exactly:
+─────────────────────────────────────────────────────────────────────────────
+The model only ever sees beats produced by the firmware, so the training
+beats must be produced the same way.  Earlier versions used a zero-phase
+4th-order Butterworth bandpass at 360 Hz, while the firmware runs causal
+2nd-order biquads (HP 0.5 Hz, LP 40 Hz, 50 Hz notch) at 250 Hz.  Causal
+filters shift and reshape the waveform (phase response, HP undershoot after
+the QRS, the notch's ~4% passband gain), so the CNN was learning a
+morphology the device never produces.
+
+The pipeline is therefore: raw MIT-BIH (360 Hz) → resample_poly to 250 Hz
+(stands in for the AD8232's analogue anti-alias stage + ADC) → the exact
+config.h biquad coefficients, applied causally with lfilter.  Annotated
+R-peaks are then snapped to the largest |filtered| sample within
+±RPEAK_SNAP_HALF, which is the final step of the firmware's detector, so
+window alignment matches too.  Filter coefficients and RR_MEAN_WINDOW are
+duplicated from config.h and must be kept in sync by hand.
+
+Not modelled: the AD8232 board's own analogue filtering and gain spread.
 ─────────────────────────────────────────────────────────────────────────────
 
 Asymmetric Window — why 96 pre / 32 post instead of 64 / 64:
@@ -135,10 +174,7 @@ _GCD          = 10
 RESAMPLE_UP   = TARGET_FS   // _GCD   # 25
 RESAMPLE_DOWN = ORIGINAL_FS // _GCD   # 36
 
-# Asymmetric beat window at TARGET_FS
-# 187 samples before R-peak = 748 ms  (more P-wave context for SVEB detection)
-#  63 samples after  R-peak = 252 ms  (enough for full T-wave)
-# Total = 250 samples = 1.000 s
+# Asymmetric beat window at TARGET_FS — 384 ms pre / 128 ms post (see docstring)
 WINDOW_SIZE_BEFORE = 96
 WINDOW_SIZE_AFTER  = 32
 BEAT_LENGTH        = WINDOW_SIZE_BEFORE + WINDOW_SIZE_AFTER   # 128
@@ -146,10 +182,21 @@ BEAT_LENGTH        = WINDOW_SIZE_BEFORE + WINDOW_SIZE_AFTER   # 128
 # Number of RR interval features appended to each beat
 N_RR_FEATURES = 3   # pre_rr_norm, post_rr_norm, ratio_rr
 
-# Bandpass filter at original rate
-LOWCUT       = 0.5
-HIGHCUT      = 40.0
-FILTER_ORDER = 4
+# Firmware filter chain — copied from config.h FilterCfg, fs = 250 Hz.
+LOWCUT  = 0.5    # HP corner (metadata only)
+HIGHCUT = 40.0   # LP corner (metadata only)
+FW_HP_B    = [0.99115, -1.98230,  0.99115]
+FW_HP_A    = [1.0,     -1.98222,  0.98232]
+FW_LP_B    = [0.14413,  0.28826,  0.14413]
+FW_LP_A    = [1.0,     -0.67736,  0.25390]
+FW_NOTCH_B = [1.0,     -0.61800,  1.0]
+FW_NOTCH_A = [1.0,     -0.59484,  0.92598]
+
+# R-peak snap half-width — config.h FilterCfg::PT_RPEAK_SEARCH_HALF.
+RPEAK_SNAP_HALF = 15
+
+# Running mean RR length — config.h MLCfg::RR_MEAN_WINDOW.
+RR_MEAN_WINDOW = 8
 
 # Patient-level splits — de Chazal et al. (2004) DS1/DS2 standard.
 # VAL = 118, 201, 207, 223 (pulled from DS1 for minority coverage).
@@ -192,17 +239,23 @@ CLASS_NAMES = {0: 'Normal', 1: 'Supraventricular', 2: 'Ventricular'}
 # SIGNAL PROCESSING
 # ============================================================================
 
-def bandpass_filter(data, lowcut, highcut, fs, order=4):
-    """Zero-phase bandpass filter applied at original 360 Hz."""
-    nyq  = 0.5 * fs
-    sos  = signal.butter(order, [lowcut / nyq, highcut / nyq],
-                         btype='band', output='sos')
-    return signal.sosfiltfilt(sos, data)
-
-
-def downsample_signal(ecg_filtered):
+def downsample_signal(ecg):
     """Downsample 360 → 250 Hz using exact rational resampling (25/36)."""
-    return signal.resample_poly(ecg_filtered, RESAMPLE_UP, RESAMPLE_DOWN)
+    return signal.resample_poly(ecg, RESAMPLE_UP, RESAMPLE_DOWN)
+
+
+def firmware_filter(ecg_250):
+    """The firmware's causal HP → LP → notch biquad chain, at 250 Hz."""
+    x = signal.lfilter(FW_HP_B, FW_HP_A, ecg_250)
+    x = signal.lfilter(FW_LP_B, FW_LP_A, x)
+    return signal.lfilter(FW_NOTCH_B, FW_NOTCH_A, x)
+
+
+def snap_rpeak(ecg_filtered, r_peak_idx):
+    """Move an R-peak to the largest |filtered| sample nearby, as the firmware does."""
+    lo = max(0, r_peak_idx - RPEAK_SNAP_HALF)
+    hi = min(len(ecg_filtered), r_peak_idx + RPEAK_SNAP_HALF + 1)
+    return lo + int(np.argmax(np.abs(ecg_filtered[lo:hi])))
 
 
 def scale_rpeak(r_peak_original):
@@ -231,9 +284,10 @@ def compute_rr_features(r_peaks_samples):
     Compute 3 RR interval features for each beat in a record.
 
     Features (all dimensionless ratios — invariant to heart rate):
-      1. pre_rr_norm  = pre-ectopic RR  / mean_RR
-      2. post_rr_norm = post-ectopic RR / mean_RR
+      1. pre_rr_norm  = pre-ectopic RR  / local_mean_RR
+      2. post_rr_norm = post-ectopic RR / local_mean_RR
       3. ratio_rr     = pre_rr / post_rr
+    local_mean_RR = mean of the last RR_MEAN_WINDOW intervals up to pre_rr.
 
     Why these three:
       - pre_rr_norm  < 1 strongly indicates a premature beat (SVEB or VEB)
@@ -241,8 +295,11 @@ def compute_rr_features(r_peaks_samples):
         and SVEB; the two classes differ in pause length
       - ratio_rr combines both: ~1 for Normal, <1 for premature-with-pause
 
-    Boundary beats (first and last) use the nearest-neighbour RR as a
-    safe fallback rather than zero or NaN, which would poison the scaler.
+    Boundary beats (first and last) have no pre or post interval; their rows
+    are NaN and the caller drops them, as the firmware never emits them.
+
+    Mirrors SignalProcessor.cpp: same intervals, same running mean, same
+    order of operations. Change one, change both.
 
     Args:
         r_peaks_samples: list of R-peak sample indices (already at TARGET_FS)
@@ -250,23 +307,18 @@ def compute_rr_features(r_peaks_samples):
         np.ndarray of shape (n_beats, 3)
     """
     n = len(r_peaks_samples)
-    if n < 2:
-        return np.ones((n, N_RR_FEATURES), dtype=np.float32)
+    features = np.full((n, N_RR_FEATURES), np.nan, dtype=np.float32)
+    if n < 3:
+        return features
 
-    r_peaks = np.array(r_peaks_samples, dtype=np.float64)
-    rr      = np.diff(r_peaks) / TARGET_FS          # in seconds, shape (n-1,)
-    mean_rr = np.mean(rr)
+    rr = np.diff(np.asarray(r_peaks_samples, dtype=np.float64))   # samples
+    for i in range(1, n - 1):
+        pre_rr  = rr[i - 1]
+        post_rr = rr[i]
+        mean_rr = max(np.mean(rr[max(0, i - RR_MEAN_WINDOW):i]), 1e-3)
 
-    if mean_rr <= 0:
-        mean_rr = 1.0
-
-    features = np.zeros((n, N_RR_FEATURES), dtype=np.float32)
-    for i in range(n):
-        pre_rr  = rr[i - 1] if i > 0     else rr[0]
-        post_rr = rr[i]     if i < n - 1 else rr[-1]
-
-        features[i, 0] = pre_rr  / mean_rr              # pre_rr_norm
-        features[i, 1] = post_rr / mean_rr              # post_rr_norm
+        features[i, 0] = pre_rr  / mean_rr                           # pre_rr_norm
+        features[i, 1] = post_rr / mean_rr                           # post_rr_norm
         features[i, 2] = pre_rr  / post_rr if post_rr > 0 else 1.0   # ratio_rr
 
     return features
@@ -280,11 +332,11 @@ def process_record(record_num, channel=0):
     """
     Full pipeline for one MIT-BIH record:
       1. Load raw ECG + annotations
-      2. Bandpass filter at 360 Hz
-      3. Downsample to 250 Hz
-      4. First pass: collect all valid (r_peak_250Hz, label) pairs
-      5. Compute RR features from the valid R-peak sequence
-      6. Second pass: extract asymmetric beat windows
+      2. Downsample to 250 Hz
+      3. Firmware filter chain (causal biquads)
+      4. First pass: every annotated beat, R-peak snapped like the firmware
+      5. Compute RR features from that full beat sequence
+      6. Second pass: extract windows for labelled beats with valid RR
 
     Returns:
         beats      : list of np.ndarray shape (BEAT_LENGTH,)
@@ -297,35 +349,32 @@ def process_record(record_num, channel=0):
         annotation = wfdb.rdann(record_path, 'atr')
         ecg_signal = record.p_signal[:, channel]
 
-        ecg_filtered  = bandpass_filter(ecg_signal, LOWCUT, HIGHCUT,
-                                        ORIGINAL_FS, FILTER_ORDER)
-        ecg_resampled = downsample_signal(ecg_filtered)
+        ecg_resampled = firmware_filter(downsample_signal(ecg_signal))
 
-        # ── First pass: collect every valid beat position ──────────────
-        # We need ALL valid R-peaks (not just extracted ones) to compute
-        # accurate RR intervals.  A beat may be skipped due to window
-        # boundary but its timing still affects neighbours' RR values.
-        all_valid = []   # (r_peak_250Hz, symbol, label)
+        # ── First pass: every annotated beat, including discarded classes ──
+        # The firmware detects F/Q/paced beats too, so their timing must stay
+        # in the RR sequence even though they are not used as labels.
+        all_beats = []   # (r_peak_250Hz, label)
         for r_orig, sym in zip(annotation.sample, annotation.symbol):
             if sym not in AAMI_CLASSES:
                 continue
-            lbl = AAMI_CLASSES[sym]
-            if lbl == -1:
-                continue
-            all_valid.append((scale_rpeak(r_orig), sym, lbl))
+            r_peak = snap_rpeak(ecg_resampled, scale_rpeak(r_orig))
+            all_beats.append((r_peak, AAMI_CLASSES[sym]))
 
-        if not all_valid:
+        if not all_beats:
             return [], [], []
 
-        r_peaks_all = [v[0] for v in all_valid]
-        rr_all      = compute_rr_features(r_peaks_all)   # shape (n_valid, 3)
+        r_peaks_all = [v[0] for v in all_beats]
+        rr_all      = compute_rr_features(r_peaks_all)   # shape (n_beats, 3)
 
         # ── Second pass: extract windows and keep matching RR rows ──────
         beats       = []
         rr_features = []
         labels      = []
 
-        for i, (r_peak, _sym, lbl) in enumerate(all_valid):
+        for i, (r_peak, lbl) in enumerate(all_beats):
+            if lbl == -1 or np.isnan(rr_all[i, 0]):
+                continue
             beat = extract_beat(ecg_resampled, r_peak)
             if beat is not None:
                 beats.append(beat)
@@ -524,6 +573,8 @@ def save_data(X_train, RR_train, y_train,
         'resample_ratio' : f'{RESAMPLE_UP}/{RESAMPLE_DOWN}',
         'lowcut_hz'      : LOWCUT,
         'highcut_hz'     : HIGHCUT,
+        'filter'         : 'firmware causal biquads (config.h FilterCfg)',
+        'rr_mean_window' : RR_MEAN_WINDOW,
         'train_records'  : TRAIN_RECORDS,
         'val_records'    : VAL_RECORDS,
         'test_records'   : TEST_RECORDS,

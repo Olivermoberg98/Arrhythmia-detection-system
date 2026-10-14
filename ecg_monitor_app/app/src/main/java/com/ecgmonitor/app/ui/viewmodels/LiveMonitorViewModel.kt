@@ -139,6 +139,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      */
     private var recordingSampleIndex = 0
 
+    /** ESP32 timestamp of the newest streamed sample, for back-dating beat events. */
+    @Volatile private var latestStreamTimestampMs = 0L
+
     // endregion
 
     // region Beat detection state
@@ -179,7 +182,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         // ── Beat window classification: separate collector ───────────────────────
         // Classification runs on beat windows from ESP32. Each beat window contains
-        // 250 ECG samples + 3 RR features. TFLite runs on the Android device (~20-50ms).
+        // 128 ECG samples + 3 RR features, and arrives one RR interval after its R-peak
+        // (the firmware waits for post_rr). TFLite runs on the Android device (~20-50ms).
         // Each window is scored for signal quality before its classification is trusted;
         // see the quality-gate note in the "Classification & model monitoring" region.
         viewModelScope.launch(Dispatchers.Default) {
@@ -221,7 +225,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
                     val event = ArrhythmiaEvent(
                         timestamp   = result.timestampMs,
-                        sampleIndex = recordingSampleIndex,
+                        sampleIndex = eventSampleIndex(result.timestampMs),
                         type        = eventType,
                         confidence  = result.confidence
                     )
@@ -318,6 +322,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                 sampleIndex = recordingSampleIndex++
             )
         }
+        newReadings.lastOrNull()?.let { latestStreamTimestampMs = it.timestamp }
 
         // ── Visible window: use a pre-allocated ArrayDeque, never copy the full list ──
         // Previously: _ecgReadings.value.toMutableList() on every packet — a 3 000-element
@@ -414,6 +419,16 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
             if (_isRecording.value) recordingHrSamples.add(displayHr)
         }
+    }
+
+    /**
+     * Recording index of a beat's R-peak. The firmware emits each beat at the next
+     * R-peak (it needs post_rr), so "now" is one RR interval past the beat.
+     */
+    private fun eventSampleIndex(rTimestampMs: Long): Int {
+        val lagSamples = ((latestStreamTimestampMs - rTimestampMs) * TARGET_FS / MS_PER_SECOND)
+            .toInt().coerceAtLeast(0)
+        return (recordingSampleIndex - 1 - lagSamples).coerceAtLeast(0)
     }
 
     /** Clears all detector state — called on lead reconnect and packet gaps. */
@@ -570,6 +585,7 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     companion object {
         /** Sampling rate the ESP32 ADC runs at. Must match firmware and the trained model. */
         private const val TARGET_FS = 250
+        private const val MS_PER_SECOND = 1000L
 
         /**
          * Samples kept in the live display buffer.

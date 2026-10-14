@@ -108,7 +108,7 @@ namespace FilterCfg {
 }
 
 // ============================================================
-// ML / Inference — UPDATED for dual-input 3-class model
+// ML contract (inference runs in the app; these must match training)
 // ============================================================
 namespace MLCfg {
 
@@ -126,19 +126,11 @@ namespace MLCfg {
         "Ventricular",
     };
 
-    // Per-class thresholds — tuned on validation set (macro F1 = 0.772).
-    // Real values are baked into model_config.h by extract_constants.py;
-    // these defaults compile when model_config.h is not yet generated.
-    constexpr float DEFAULT_THRESHOLDS[NUM_CLASSES] = {
-        0.234f,  // Normal
-        0.050f,  // Supraventricular
-        0.050f,  // Ventricular
-    };
-
     // RR features fed to model input 1: [pre_rr_norm, post_rr_norm, ratio_rr]
     constexpr uint8_t N_RR_FEATURES   = 3;
-    constexpr size_t  RR_MEAN_WINDOW  = 8;    // beats used for running mean RR
-    constexpr float   RR_CLAMP_SIGMA  = 4.0f; // outlier clamp before normalisation
+    // Mean RR = mean of the last RR_MEAN_WINDOW intervals up to pre_rr.
+    // Must match preprocess.py RR_MEAN_WINDOW.
+    constexpr size_t  RR_MEAN_WINDOW  = 8;
 }
 
 // ============================================================

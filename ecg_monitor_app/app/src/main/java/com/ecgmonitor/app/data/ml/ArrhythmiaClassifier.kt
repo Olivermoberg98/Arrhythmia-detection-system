@@ -100,7 +100,7 @@ class ArrhythmiaClassifier(context: Context) {
         interpreter.runForMultipleInputsOutputs(inputs, outputs)
 
         val scores = output[0]
-        val classId = scores.indices.maxByOrNull { scores[it] } ?: 0
+        val classId = decide(scores, metadata.thresholds)
         val confidence = scores[classId]
         val isValid = confidence >= metadata.thresholds[classId]
 
@@ -143,6 +143,14 @@ class ArrhythmiaClassifier(context: Context) {
         private const val UNKNOWN_VERSION = "unknown"
 
         /**
+         * The decision rule the thresholds were tuned for in `train_model.py`:
+         * class = argmax(scores / thresholds). Plain argmax ignores them and
+         * under-calls the minority classes.
+         */
+        fun decide(scores: FloatArray, thresholds: FloatArray): Int =
+            scores.indices.maxByOrNull { scores[it] / thresholds[it] } ?: 0
+
+        /**
          * Electrode-referred millivolts per raw ADC count, converting the firmware's
          * beat window into the units `model_metadata.json`'s scaler was fit on.
          *
@@ -166,10 +174,10 @@ class ArrhythmiaClassifier(context: Context) {
 
         /**
          * Mean |z| a beat drawn from the training distribution produces, measured over
-         * the 41,897 training beats (mean 0.53, 5th-95th percentile 0.24-1.01). The
+         * the 41,873 training beats (mean 0.54, 5th-95th percentile 0.24-1.02). The
          * reference point for reading `driftScore`.
          */
-        const val EXPECTED_DRIFT_SCORE = 0.53f
+        const val EXPECTED_DRIFT_SCORE = 0.54f
     }
 }
 

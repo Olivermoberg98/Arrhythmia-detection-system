@@ -21,17 +21,23 @@ void SignalProcessor::reset() {
     _beatBufHead = 0;
     _beatBufFill = 0;
 
-    _samplesSinceR  = 0;
     _rPeakBufPos    = 0;
     _pendingBeat    = false;
     _postRRemaining = 0;
     _beatReady      = false;
+    _rPeaksSeen     = 0;
+
+    _holding      = false;
+    _heldPreRR    = 0.0f;
+    _heldMeanRR   = 0.0f;
+    _reportSinceR = 0;
+    memset(_heldWindow, 0, sizeof(_heldWindow));
+    memset(_outWindow, 0, sizeof(_outWindow));
 
     memset(_rrHistory, 0, sizeof(_rrHistory));
     _rrHead     = 0;
     _rrFill     = 0;
-    _preRR      = 0.0f;
-    _postRR     = 0.0f;
+    _lastRR     = 0.0f;
     _rrCounter  = 0;
     memset(_rrFeatures, 0, sizeof(_rrFeatures));
 }
@@ -190,7 +196,6 @@ float SignalProcessor::processSample(int16_t raw) {
 
     // -- RR counter (counts every sample) ---------------------------------
     _rrCounter++;
-    _samplesSinceR++;
 
     // -- Post-R window countdown ------------------------------------------
     if (_pendingBeat) {
@@ -198,34 +203,24 @@ float SignalProcessor::processSample(int16_t raw) {
             _postRRemaining--;
         }
         if (_postRRemaining == 0) {
-            // Full beat window is now in the buffer.
+            // Full window is in the ring buffer. Copy it out and hold it: the
+            // beat is emitted at the next R-peak, which supplies post_rr.
             _pendingBeat = false;
-            _beatReady   = true;
 
-            // Snapshot RR features for this beat.
-            // _preRR and _postRR are in samples; convert to ms.
-            const float fs = static_cast<float>(SamplingCfg::ECG_SAMPLE_RATE_HZ);
-
-            // Running mean RR over the history window (in ms)
-            float meanRR = 0.0f;
-            if (_rrFill > 0) {
-                float sum = 0.0f;
-                const size_t n = std::min(_rrFill, static_cast<size_t>(MLCfg::RR_MEAN_WINDOW));
-                for (size_t i = 0; i < n; ++i) {
-                    size_t idx = (_rrHead + RR_HISTORY - 1 - i) % RR_HISTORY;
-                    sum += _rrHistory[idx];
-                }
-                meanRR = (sum / n) / fs * 1000.0f;  // samples -> ms
+            const size_t BUF = SamplingCfg::ECG_BEAT_BUFFER_SIZE;
+            const size_t startPos =
+                (_rPeakBufPos + BUF - SamplingCfg::BEAT_PRE_SAMPLES) % BUF;
+            for (size_t i = 0; i < SamplingCfg::BEAT_WINDOW_SAMPLES; ++i) {
+                _heldWindow[i] = _beatBuf[(startPos + i) % BUF];
             }
 
-            if (meanRR < 1e-3f) meanRR = 1e-3f;  // guard zero-divide
-
-            float pre_rr_ms  = _postRR / fs * 1000.0f;   // R(B-1)→R(B)  = correct pre_rr
-            float post_rr_ms = _postRR / fs * 1000.0f;   // R(B)→R(B+1) unknown → best approx = same interval
-
-            _rrFeatures[0] = pre_rr_ms  / meanRR;                               // pre_rr_norm  ✓
-            _rrFeatures[1] = post_rr_ms / meanRR;                               // post_rr_norm ≈
-            _rrFeatures[2] = (post_rr_ms > 1e-3f) ? (pre_rr_ms / post_rr_ms) : 1.0f;  // ratio ≈ 1.0
+            // History still ends at pre_rr here, so the mean covers the
+            // RR_MEAN_WINDOW intervals up to and including this beat's pre_rr.
+            float sum = 0.0f;
+            for (size_t i = 0; i < _rrFill; ++i) sum += _rrHistory[i];
+            _heldPreRR  = _lastRR;
+            _heldMeanRR = (_rrFill > 0) ? sum / _rrFill : 0.0f;
+            _holding    = true;
         }
     }
 
@@ -264,23 +259,42 @@ float SignalProcessor::processSample(int16_t raw) {
             ? static_cast<float>(_rrCounter - backoff)
             : static_cast<float>(_rrCounter);
 
-        // Update RR history
-        _rrHistory[_rrHead] = rrInterval;
-        _rrHead = (_rrHead + 1) % RR_HISTORY;
-        if (_rrFill < RR_HISTORY) _rrFill++;
+        // The first R-peak after reset has no predecessor, so its "interval"
+        // is just time since reset and is discarded.
+        const bool havePrev = _rPeaksSeen > 0;
+        if (!havePrev) _rPeaksSeen = 1;
 
-        // Shift RR window: previous post becomes new pre
-        _preRR  = _postRR;
-        _postRR = rrInterval;
+        if (havePrev) {
+            _rrHistory[_rrHead] = rrInterval;
+            _rrHead = (_rrHead + 1) % RR_HISTORY;
+            if (_rrFill < RR_HISTORY) _rrFill++;
+            _lastRR = rrInterval;
+        }
         _rrCounter = backoff;
 
-        _rPeakBufPos    = (thisPos + BUF - backoff) % BUF;
-        _samplesSinceR  = backoff;
+        // This R-peak closes the held beat's post-RR interval: emit it now.
+        // Features match preprocess.py::compute_rr_features exactly.
+        if (_holding && havePrev) {
+            _holding = false;
+            const float pre  = _heldPreRR;
+            const float post = rrInterval;
+            const float mean = (_heldMeanRR > 1e-3f) ? _heldMeanRR : 1e-3f;
+
+            _rrFeatures[0] = pre / mean;                           // pre_rr_norm
+            _rrFeatures[1] = post / mean;                          // post_rr_norm
+            _rrFeatures[2] = (post > 1e-3f) ? pre / post : 1.0f;   // ratio_rr
+
+            memcpy(_outWindow, _heldWindow, sizeof(_outWindow));
+            _reportSinceR = static_cast<uint32_t>(rrInterval) + backoff;
+            _beatReady    = true;
+        }
+
+        _rPeakBufPos = (thisPos + BUF - backoff) % BUF;
 
         // The crest search already collected `backoff` of the post-R samples.
-        // Don't start a new pending beat if one is already in progress
-        // (this handles very high HR / noise spikes).
-        if (!_pendingBeat) {
+        // A beat is only windowed once it has a valid pre_rr (havePrev), and
+        // not while another is still filling (very high HR / noise spikes).
+        if (!_pendingBeat && havePrev) {
             // Only start if we have enough pre-samples buffered behind the crest.
             if (_beatBufFill >= SamplingCfg::BEAT_PRE_SAMPLES + backoff) {
                 _pendingBeat    = true;
@@ -307,30 +321,15 @@ bool SignalProcessor::isBeatReady() const {
 // ======================================================================
 
 uint32_t SignalProcessor::samplesSinceR() const {
-    return _samplesSinceR;
+    return _reportSinceR;
 }
 
 // ======================================================================
-// getBeat — linearise the 128-sample window into out[]
+// getBeat — copy out the reported beat's 128-sample window
 // ======================================================================
 
 void SignalProcessor::getBeat(float* out) const {
-    // The R-peak was at _rPeakBufPos in the circular buffer.
-    // The window starts BEAT_PRE_SAMPLES before that position and ends
-    // BEAT_POST_SAMPLES after it.
-    // Since _postRRemaining just hit zero, exactly BEAT_POST_SAMPLES
-    // samples have been written after _rPeakBufPos, so the write head
-    // is now sitting at (rPeak + BEAT_POST_SAMPLES + 1) mod BUF.
-
-    const size_t BUF = SamplingCfg::ECG_BEAT_BUFFER_SIZE;
-    const size_t WIN = SamplingCfg::BEAT_WINDOW_SAMPLES;  // 128
-
-    // Start of window = rPeak - BEAT_PRE_SAMPLES
-    size_t startPos = (_rPeakBufPos + BUF - SamplingCfg::BEAT_PRE_SAMPLES) % BUF;
-
-    for (size_t i = 0; i < WIN; ++i) {
-        out[i] = _beatBuf[(startPos + i) % BUF];
-    }
+    memcpy(out, _outWindow, sizeof(_outWindow));
 }
 
 // ======================================================================
