@@ -174,10 +174,10 @@ class ArrhythmiaClassifier(context: Context) {
 
         /**
          * Mean |z| a beat drawn from the training distribution produces, measured over
-         * the 41,873 training beats (mean 0.54, 5th-95th percentile 0.24-1.02). The
+         * the 41,873 training beats (mean 0.55, 5th-95th percentile 0.23-1.02). The
          * reference point for reading `driftScore`.
          */
-        const val EXPECTED_DRIFT_SCORE = 0.54f
+        const val EXPECTED_DRIFT_SCORE = 0.55f
     }
 }
 
