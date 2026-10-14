@@ -73,6 +73,7 @@ pio run                          # build default env
 pio run -t upload                # flash — hold BOOT for the whole upload, auto-download-mode is unreliable
 pio device monitor -b 921600     # serial monitor (esp32_exception_decoder filter)
 pio run -e esp32dev_debug        # debug build, CORE_DEBUG_LEVEL=4
+pio test -e native                # host unit tests for SignalProcessor (needs MSYS2 gcc on PATH)
 ```
 No serial ports are hardcoded in `platformio.ini` — pass `--upload-port` / `--port` yourself.
 
@@ -132,4 +133,4 @@ Resolved: PPG/MAX30102 is dropped; inference stays on the phone; the old root RE
 - **ADC headroom**: ±1.41 mV electrode-referred full scale is tight for a 1–3 mV QRS; clipping distorts beats and shifts R-peaks. Board-gain dependent, unverified on hardware.
 - **Privacy framing**: processing is on-device (ESP32 + phone), but the app syncs session *metadata* to Firebase. Don't describe the system as "no cloud"; raw waveforms stay local.
 - **No CI.** No GitHub Actions or other automation; tests run locally only.
-- **Firmware and ML pipeline have no automated tests.** `pio test` has nothing to run (`test/` contains only a README). The signal chain (filters, Pan-Tompkins, beat extraction) is the highest-value untested code in the repo, followed by the cross-project contract table above — nothing checks that the four copies agree.
+- **Test coverage is thin.** `test/test_signal_processor` (`pio test -e native`) covers SignalProcessor with synthetic ECG: detection, the 96/32 window, real `post_rr`, the 8-interval RR mean, reset. Not covered: main.cpp's lead-off/settling logic, BLE, and the ML pipeline (end-to-end parity with MIT-BIH was verified by hand, not by a committed test). If a native test fails to link with a silent `ld returned 5`, see the `UNITY_WEAK_ATTRIBUTE` note in `platformio.ini`.
