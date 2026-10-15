@@ -231,27 +231,30 @@ float SignalProcessor::processSample(int16_t raw) {
     bool rPeak = ptUpdate(x, backoff);
 
     if (rPeak) {
-        // Undo the MWI group delay, then snap to the filtered signal's dominant
-        // deflection. The search is symmetric because the crest can sit either
-        // side of it: an rS complex peaks after the steepest slope, a tall R
-        // before it. Backwards-only snapping locks onto the S wave.
+        // Undo the MWI group delay, then move to the QRS's slope-energy centroid
+        // (mean time of the squared first difference within the search window).
+        // Snapping to the largest |deflection| flipped between R and S on
+        // RS-type beats (|R| ~ |S|), shifting the window ~30 ms beat to beat.
+        // Mirrors preprocess.py::snap_rpeak; change one, change both.
         const size_t BUF = SamplingCfg::ECG_BEAT_BUFFER_SIZE;
+        auto at = [&](uint32_t back) { return _beatBuf[(thisPos + BUF - back) % BUF]; };
 
-        uint32_t centreBack = backoff + FilterCfg::PT_MWI_GROUP_DELAY;
-        uint32_t half       = FilterCfg::PT_RPEAK_SEARCH_HALF;
-        if (half > centreBack) half = centreBack;             // stay in the past
-        if (_beatBufFill < centreBack + half) half = 0;       // not enough history
+        float centre = static_cast<float>(backoff + FilterCfg::PT_MWI_GROUP_DELAY);
+        for (uint32_t iter = 0; iter < FilterCfg::PT_FIDUCIAL_ITERATIONS; ++iter) {
+            const uint32_t c = static_cast<uint32_t>(centre + 0.5f);
+            uint32_t half = FilterCfg::PT_RPEAK_SEARCH_HALF;
+            if (half > c) half = c;                              // stay in the past
+            if (_beatBufFill < c + half + 2) break;              // not enough history
 
-        uint32_t bestBack = centreBack;
-        float    bestMag  = std::fabs(_beatBuf[(thisPos + BUF - centreBack) % BUF]);
-        for (uint32_t k = 1; k <= half; ++k) {
-            for (int dir = -1; dir <= 1; dir += 2) {
-                const uint32_t cand = centreBack + dir * static_cast<int>(k);
-                const float mag = std::fabs(_beatBuf[(thisPos + BUF - cand) % BUF]);
-                if (mag > bestMag) { bestMag = mag; bestBack = cand; }
+            float sumW = 0.0f, sumWB = 0.0f;
+            for (uint32_t b = c - half; b <= c + half; ++b) {
+                const float d = at(b) - at(b + 1);               // x[t] - x[t-1]
+                sumW  += d * d;
+                sumWB += d * d * static_cast<float>(b);
             }
+            if (sumW > 0.0f) centre = sumWB / sumW;
         }
-        backoff = bestBack;
+        backoff = static_cast<uint32_t>(centre + 0.5f);
 
         // _rrCounter ran on past the R-peak during the crest search and the
         // back-search, so both are removed to get the true R-to-R interval.

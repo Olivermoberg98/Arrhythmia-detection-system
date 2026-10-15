@@ -6,7 +6,7 @@ This version:
 ✔ The AD8232 board's analogue filters, modelled at 360 Hz (see "Firmware parity")
 ✔ Exact rational downsample 360 → 250 Hz (resample_poly, factor 25/36)
 ✔ The firmware's own causal filter chain at 250 Hz (see "Firmware parity")
-✔ R-peaks snapped to the filtered signal exactly as the firmware does
+✔ Beat fiducial = QRS slope-energy centroid, computed exactly as the firmware does
 ✔ Asymmetric beat window: 96 pre / 32 post = 128 samples total
 ✔ RR interval features appended alongside morphology (3 features per beat)
 ✔ Normalization after splitting (train stats only — no leakage)
@@ -123,10 +123,9 @@ morphology the device never produces.
 
 The pipeline is therefore: raw MIT-BIH (360 Hz) → the AD8232 board's
 analogue response (below) → resample_poly to 250 Hz (stands in for the ADC)
-→ the exact config.h biquad coefficients, applied causally with lfilter.  Annotated
-R-peaks are then snapped to the largest |filtered| sample within
-±RPEAK_SNAP_HALF, which is the final step of the firmware's detector, so
-window alignment matches too.  Filter coefficients and RR_MEAN_WINDOW are
+→ the exact config.h biquad coefficients, applied causally with lfilter.  Each annotated
+beat is then moved to the same fiducial point the firmware's detector ends
+on (below), so window alignment matches too.  Filter coefficients and RR_MEAN_WINDOW are
 duplicated from config.h and must be kept in sync by hand.
 
 The analogue stage matters because the board filters before the firmware
@@ -145,6 +144,25 @@ MIT-BIH was itself recorded through a 0.1–100 Hz analogue chain, so this
 approximates the device's view of the same heart.
 
 Not modelled: component tolerances and board-to-board gain spread.
+─────────────────────────────────────────────────────────────────────────────
+
+Beat fiducial — why the slope-energy centroid and not the R-peak:
+─────────────────────────────────────────────────────────────────────────────
+The 128-sample window is placed relative to one point per beat, and that
+point must land on the same part of the QRS every time.  The obvious choice,
+the largest |filtered| sample, is unstable on RS-type complexes where the S
+wave is about as deep as the R is tall (a normal variant; the first real
+wearer of this device has one): it flips between R and S from beat to beat,
+shifting the window ~30 ms and feeding the model inconsistent inputs.
+
+The fiducial is instead the centroid of the squared first difference,
+sum(t * d[t]^2) / sum(d[t]^2), over ±RPEAK_SNAP_HALF samples around the
+current estimate, refined FIDUCIAL_ITERATIONS times.  Slope energy is
+concentrated in the QRS (P and T are slow), and a weighted mean moves
+continuously as the R/S balance changes instead of jumping between peaks.
+It is the same quantity Pan-Tompkins' integrator is built on, so it is cheap
+on the ESP32.  The firmware starts from its detector crest, training from the
+database annotation; three refinements make both land on the same sample.
 ─────────────────────────────────────────────────────────────────────────────
 
 Asymmetric Window — why 96 pre / 32 post instead of 64 / 64:
@@ -214,8 +232,10 @@ FW_LP_A    = [1.0,     -0.67736,  0.25390]
 FW_NOTCH_B = [1.0,     -0.61800,  1.0]
 FW_NOTCH_A = [1.0,     -0.59484,  0.92598]
 
-# R-peak snap half-width — config.h FilterCfg::PT_RPEAK_SEARCH_HALF.
-RPEAK_SNAP_HALF = 15
+# Fiducial window half-width and refinements — config.h FilterCfg::
+# PT_RPEAK_SEARCH_HALF / PT_FIDUCIAL_ITERATIONS.
+RPEAK_SNAP_HALF     = 15
+FIDUCIAL_ITERATIONS = 3
 
 # Running mean RR length — config.h MLCfg::RR_MEAN_WINDOW.
 RR_MEAN_WINDOW = 8
@@ -290,10 +310,19 @@ def firmware_filter(ecg_250):
 
 
 def snap_rpeak(ecg_filtered, r_peak_idx):
-    """Move an R-peak to the largest |filtered| sample nearby, as the firmware does."""
-    lo = max(0, r_peak_idx - RPEAK_SNAP_HALF)
-    hi = min(len(ecg_filtered), r_peak_idx + RPEAK_SNAP_HALF + 1)
-    return lo + int(np.argmax(np.abs(ecg_filtered[lo:hi])))
+    """Move a beat to its QRS slope-energy centroid, as the firmware does (see docstring)."""
+    centre = float(r_peak_idx)
+    for _ in range(FIDUCIAL_ITERATIONS):
+        c  = int(np.floor(centre + 0.5))
+        lo = max(1, c - RPEAK_SNAP_HALF)
+        hi = min(len(ecg_filtered) - 1, c + RPEAK_SNAP_HALF)
+        if hi <= lo:
+            break
+        d = ecg_filtered[lo:hi + 1] - ecg_filtered[lo - 1:hi]
+        w = d * d
+        if w.sum() > 0:
+            centre = float((w * np.arange(lo, hi + 1)).sum() / w.sum())
+    return int(np.floor(centre + 0.5))
 
 
 def scale_rpeak(r_peak_original):

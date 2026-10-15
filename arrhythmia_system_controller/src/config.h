@@ -107,9 +107,11 @@ namespace FilterCfg {
     // delay and then snapped to the filtered signal's dominant deflection.
     constexpr uint32_t PT_MWI_GROUP_DELAY = 18;   // 16 (MWI/2) + 2 (derivative)
 
-    // Half-width of the snap search, either side of the compensated crest.
-    // Kept under half a QRS width so it cannot reach the T wave.
-    constexpr uint32_t PT_RPEAK_SEARCH_HALF = 15;   // 60 ms @ 250 Hz
+    // Half-width of the fiducial (slope-energy centroid) window, either side
+    // of the current estimate. Kept under half a QRS width so it cannot reach
+    // the T wave. Must match preprocess.py RPEAK_SNAP_HALF / FIDUCIAL_ITERATIONS.
+    constexpr uint32_t PT_RPEAK_SEARCH_HALF   = 15;   // 60 ms @ 250 Hz
+    constexpr uint32_t PT_FIDUCIAL_ITERATIONS = 3;
 }
 
 // ============================================================

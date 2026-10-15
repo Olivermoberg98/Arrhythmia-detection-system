@@ -38,13 +38,31 @@ ADC_COUNTS_TO_MV = (3100.0 / 4096.0) / 1100.0
 # R-peak search: 250 ms refractory period caps detection at 240 bpm
 MIN_RR_SAMPLES = int(0.25 * SAMPLE_RATE_HZ)
 
+# Beat fiducial: config.h PT_RPEAK_SEARCH_HALF / PT_FIDUCIAL_ITERATIONS
+FIDUCIAL_HALF = 15
+FIDUCIAL_ITERATIONS = 3
+
 # ---- Beat extraction ----
 
+def snap_fiducial(ecg: np.ndarray, idx: int) -> int:
+    """QRS slope-energy centroid, as preprocess.py::snap_rpeak and the firmware."""
+    centre = float(idx)
+    for _ in range(FIDUCIAL_ITERATIONS):
+        c = int(np.floor(centre + 0.5))
+        lo, hi = max(1, c - FIDUCIAL_HALF), min(len(ecg) - 1, c + FIDUCIAL_HALF)
+        if hi <= lo:
+            break
+        w = (ecg[lo:hi + 1] - ecg[lo - 1:hi]) ** 2
+        if w.sum() > 0:
+            centre = float((w * np.arange(lo, hi + 1)).sum() / w.sum())
+    return int(np.floor(centre + 0.5))
+
 def detect_r_peaks(ecg: np.ndarray) -> np.ndarray:
-    """Offline R-peak detection; an approximation of the firmware's Pan-Tompkins."""
+    """Offline QRS detection (approximates the firmware's Pan-Tompkins), then the
+    firmware's fiducial so beat windows line up the same way."""
     prominence = 0.5 * np.percentile(np.abs(ecg - np.median(ecg)), 99)
-    peaks, _ = signal.find_peaks(ecg, distance=MIN_RR_SAMPLES, prominence=prominence)
-    return peaks
+    peaks, _ = signal.find_peaks(np.abs(ecg - np.median(ecg)), distance=MIN_RR_SAMPLES, prominence=prominence)
+    return np.unique([snap_fiducial(ecg, p) for p in peaks])
 
 def compute_rr_features(r_peaks: np.ndarray) -> np.ndarray:
     """Same definition as preprocess.py::compute_rr_features and the firmware.

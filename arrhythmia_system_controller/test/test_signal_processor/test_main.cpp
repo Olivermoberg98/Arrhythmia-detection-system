@@ -6,6 +6,7 @@
 // preprocess.py::compute_rr_features — change one, change both.
 #include <unity.h>
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <vector>
 #include "signal_processing/SignalProcessor.h"
@@ -20,8 +21,10 @@ struct Beat {
     float rr[MLCfg::N_RR_FEATURES];
 };
 
-// One P-QRS-T complex centred on each R time (samples).
-std::vector<int16_t> synthEcg(const std::vector<long>& rTimes, long length) {
+// One P-QRS-T complex centred on each R time (samples). sDepth[i], if given,
+// overrides beat i's S-wave amplitude (counts, negative).
+std::vector<int16_t> synthEcg(const std::vector<long>& rTimes, long length,
+                              const std::vector<double>& sDepth = {}) {
     std::vector<int16_t> x(length);
     auto g = [](double t, double mu, double sigma, double amp) {
         const double d = (t - mu) / sigma;
@@ -29,12 +32,13 @@ std::vector<int16_t> synthEcg(const std::vector<long>& rTimes, long length) {
     };
     for (long n = 0; n < length; ++n) {
         double v = 0.0;
-        for (long r : rTimes) {
+        for (size_t i = 0; i < rTimes.size(); ++i) {
+            const long r = rTimes[i];
             if (std::labs(n - r) > 150) continue;
             v += g(n, r - 45, 6.0, 120.0);    // P
             v += g(n, r - 6, 2.0, -150.0);    // Q
             v += g(n, r, 2.5, 1200.0);        // R
-            v += g(n, r + 6, 2.0, -250.0);    // S
+            v += g(n, r + 6, 2.0, i < sDepth.size() ? sDepth[i] : -250.0);   // S
             v += g(n, r + 70, 12.0, 300.0);   // T
         }
         x[n] = static_cast<int16_t>(std::lround(v));
@@ -90,12 +94,34 @@ void test_window_is_centred_96_pre_32_post() {
     const auto beats = run(p, synthEcg(truth, truth.back() + 2 * FS));
     TEST_ASSERT_TRUE(beats.size() > 5);
 
+    // The fiducial is the QRS slope-energy centroid, a few samples from the R peak.
     for (const auto& b : beats) {
-        size_t peak = 0;
-        for (size_t i = 1; i < SamplingCfg::BEAT_WINDOW_SAMPLES; ++i)
+        int peak = 0;
+        for (int i = 1; i < static_cast<int>(SamplingCfg::BEAT_WINDOW_SAMPLES); ++i)
             if (std::fabs(b.ecg[i]) > std::fabs(b.ecg[peak])) peak = i;
-        TEST_ASSERT_EQUAL(SamplingCfg::BEAT_PRE_SAMPLES, peak);
+        TEST_ASSERT_INT_WITHIN(3, static_cast<int>(SamplingCfg::BEAT_PRE_SAMPLES), peak);
     }
+}
+
+void test_fiducial_stable_when_s_is_as_deep_as_r() {
+    // RS-type beats whose S alternates just deeper / just shallower than R.
+    // A largest-|deflection| rule flips between R and S here (~6 samples);
+    // the slope-energy centroid must stay put.
+    const auto truth = regularRhythm(FS, 230, 30);
+    std::vector<double> s;
+    for (size_t i = 0; i < truth.size(); ++i) s.push_back(i % 2 ? -1300.0 : -1100.0);
+    SignalProcessor p;
+    const auto beats = run(p, synthEcg(truth, truth.back() + 2 * FS, s));
+    TEST_ASSERT_TRUE(beats.size() > 20);
+
+    long lo = 1000, hi = -1000;
+    for (const auto& b : beats) {
+        const int k = matchTruth(truth, b.r);
+        TEST_ASSERT_TRUE(k >= 0);
+        const long off = b.r - truth[k];
+        lo = std::min(lo, off); hi = std::max(hi, off);
+    }
+    TEST_ASSERT_LESS_OR_EQUAL(2, hi - lo);   // spread across all beats, samples
 }
 
 void test_post_rr_is_the_real_next_interval() {
@@ -158,6 +184,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_beat_detected_except_first_and_last);
     RUN_TEST(test_window_is_centred_96_pre_32_post);
+    RUN_TEST(test_fiducial_stable_when_s_is_as_deep_as_r);
     RUN_TEST(test_post_rr_is_the_real_next_interval);
     RUN_TEST(test_rr_mean_is_last_8_intervals_up_to_pre_rr);
     RUN_TEST(test_reset_drops_state_and_the_first_beat);
