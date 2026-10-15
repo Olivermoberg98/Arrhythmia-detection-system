@@ -60,6 +60,18 @@ The model is trained on MIT-BIH **channel 0**, which is **modified limb lead II 
 
 This makes the lead a real input contract, not a detail: **hardware electrode placement must reproduce MLII**, or the classifier sees morphology it was never trained on. The AD8232's differential is `LA − RA`, so the LA electrode goes at the left-lower-torso (LL) position to yield lead II. Any change to lead choice in preprocessing invalidates this electrode placement and vice versa. There is no separate hardware setup guide — this section is it.
 
+**Verified placement for this kit (2026-10-15).** The electrode cable's colours do **not** follow the IEC convention — mapping found with the lead-off pins (unsnap one snap at a time: LO+ alone = LA, LO− alone = RA, both = RL):
+
+| Snap | Board input | Pad position |
+|---|---|---|
+| Red | RA (−IN) | under the right collarbone, 2–3 cm from the sternum |
+| **Green** | **LA (+IN)** | lower-left ribcage, costal margin at the anterior axillary line |
+| **Yellow** | **RL (reference)** | lower-right ribcage, mirror of green |
+
+This gave the only recording that matches training: QRS 1.35 mV p-p, no clipping, 12 µV PR-segment noise, T/R 0.22, upright P/T, 100 % Normal. Moving green out to the left mid-axillary line doubled the amplitude (clips past ±1.41 mV) and added muscle noise, without changing the R/S balance. The wearer's QRS is RS-type (|S| ≈ |R|) — a normal variant, not a placement error.
+
+Practical lessons: **use fresh pads and let them settle 1–2 min** (old pads gave 3–4× smaller signals; freshly applied ones saturate the AD8232 and trip fast-restore cycling until the offset settles); keep the mains-powered PC from adding 50 Hz (USB isolator or battery); nothing may touch the board's RL/LA/RA holes — they are in parallel with the jack, and soldered header pins there shorted the inputs. Board gain was measured by injecting a known square wave (1 MΩ/220 Ω divider from GPIO21): ≈1000–1090, flat to 40 Hz, matching the Figure 66 model.
+
 Firmware pin assignment (ESP32-S3 constrained: ADC1 is GPIO1–10, GPIO4–10 taken by the camera DVP bus, GPIO26–37 by flash + octal PSRAM):
 - `GPIO1` (ADC1_CH0) — AD8232 analog OUTPUT
 - `GPIO42` / `GPIO41` — lead-off detect LO+ / LO−
