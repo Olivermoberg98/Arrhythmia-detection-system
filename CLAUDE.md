@@ -141,6 +141,8 @@ Then copy `src/ml/arrhythmia_model.tflite` + `model_metadata.json` into `ecg_mon
 
 Resolved: PPG/MAX30102 is dropped; inference stays on the phone; the old root README and the on-ESP32 inference code were removed; `validate.py` was rebuilt for the beat-window pipeline; `local.properties` is untracked.
 
+- **Open actions from the regulatory review** are listed in `docs/regulatory/RMF-001_RiskManagementFile.md` §6 (OA-1..7); the app ones (OA-1..5) are also in `ecg_monitor_app/CLAUDE.md`'s TODO. Update the OA status there when you fix one.
+- **OA-6 — model version doesn't identify the model**: `model_metadata.json` has `version "1.0.0"` for every model, and that is what sessions store as `modelVersion`. Fix in `extract_constants.py` (e.g. the training-run timestamp), then regenerate the metadata.
 - **`ml_pipeline/README.md` is stale** (wrong script names, ESP32 deployment). Use the commands in this file.
 - **ADC headroom**: ±1.41 mV electrode-referred full scale is tight for a 1–3 mV QRS; clipping distorts beats and shifts R-peaks. Board-gain dependent, unverified on hardware.
 - **Privacy framing**: processing is on-device (ESP32 + phone), but the app syncs session *metadata* to Firebase. Don't describe the system as "no cloud"; raw waveforms stay local.

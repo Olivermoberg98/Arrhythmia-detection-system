@@ -77,6 +77,12 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 
 ## TODO
 
+- **Open actions from the regulatory review** (full list and status: `docs/regulatory/RMF-001_RiskManagementFile.md` §6). When you fix one, remove its line here and update its OA status in RMF-001:
+  - **OA-1** — `ConsentScreen` says data "is not transmitted to any server, cloud service", but Firestore sync runs after consent. Fix the text and bump `CONSENT_VERSION` so users are re-prompted. Most serious one (GDPR).
+  - **OA-2** — `HistoryViewModel.deleteSession` deletes locally only; the cloud copy stays. `SESSION_DELETED` and `SESSION_EXPORTED_PDF/CSV` are never logged.
+  - **OA-3** — recordings are buffered in memory and written only on Stop, so a crash loses everything. No incomplete flag, no 10 s minimum (FR-REC-03..06).
+  - **OA-4** — the "not a medical device" notice is only on `ConsentScreen`; add it to Live Monitor and Session Detail (FR-ARR-10).
+  - **OA-5** — `res/xml/data_extraction_rules.xml` is the empty template; with targetSdk 34 device-to-device transfer probably still copies the database (NFR-08).
 - **Add real test coverage, prioritizing `BleManager.parseStreamPacket`** (and `parseBeatPacket`) before refactoring. `parseStreamPacket` is the one flagged complexity issue worth taking seriously (`CyclomaticComplexMethod` + `LongMethod` in `app/detekt-baseline.xml`), and BLE parsing + the classifier (incl. the ADC→mV conversion) currently have zero tests — don't simplify either without tests to catch regressions first.
 
 ## Open questions
