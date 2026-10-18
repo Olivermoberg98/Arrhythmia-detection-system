@@ -29,7 +29,7 @@ public:
     bool isReady() const override;
     void reset()     override;
 
-    /** @brief Whether leads are currently connected (both LO pins low). */
+    /** @brief Whether leads are connected (both LO pins low) and no SDN reset is in progress. */
     bool leadsOn()   const;
 
     /**
@@ -55,4 +55,11 @@ private:
 
     bool _ready    = false;
     bool _leadsOn  = false;
+
+    // Saturation recovery (SDN pulse) state
+    uint32_t _railRun       = 0;
+    bool     _inShutdown    = false;
+    uint32_t _shutdownStart = 0;
+    uint32_t _lastPulse     = 0;
+    bool     _pulsedOnce    = false;
 };

@@ -75,6 +75,7 @@ Practical lessons: **use fresh pads and let them settle 1–2 min** (old pads ga
 Firmware pin assignment (ESP32-S3 constrained: ADC1 is GPIO1–10, GPIO4–10 taken by the camera DVP bus, GPIO26–37 by flash + octal PSRAM):
 - `GPIO1` (ADC1_CH0) — AD8232 analog OUTPUT
 - `GPIO42` / `GPIO41` — lead-off detect LO+ / LO−
+- `GPIO21` — AD8232 SDN (active low). The chip can latch with its output pinned to a rail while LO± read connected (seen 2026-10-18; unsnapping the electrodes or a power cycle cleared it); `ECGSensor` detects 2 s at a rail and pulses SDN low for 500 ms, reported as lead-off
 
 ## Build & run commands
 

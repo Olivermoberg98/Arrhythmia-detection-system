@@ -20,6 +20,8 @@ bool ECGSensor::begin() {
     // Configure lead-off detect pins as inputs with pull-up
     pinMode(Pins::ECG_LO_PLUS,  INPUT_PULLUP);
     pinMode(Pins::ECG_LO_MINUS, INPUT_PULLUP);
+    pinMode(Pins::ECG_SDN, OUTPUT);
+    digitalWrite(Pins::ECG_SDN, HIGH);
 
     // Configure ADC for ECG pin.
     // ADC1 channels are safe to use without WiFi/BLE restrictions.
@@ -37,13 +39,19 @@ void ECGSensor::update() {
     // Check lead-off status every call (cheap GPIO read)
     bool lo_p = digitalRead(Pins::ECG_LO_PLUS)  == HIGH;
     bool lo_m = digitalRead(Pins::ECG_LO_MINUS) == HIGH;
-    _leadsOn  = !(lo_p || lo_m);
+    const uint32_t now = millis();
+    if (_inShutdown && now - _shutdownStart >= SamplingCfg::SDN_PULSE_MS) {
+        digitalWrite(Pins::ECG_SDN, HIGH);
+        _inShutdown = false;
+    }
+    _leadsOn  = !(lo_p || lo_m) && !_inShutdown;
 
     // Only sample when the timer has signalled
     if (!_sampleDue.exchange(false, std::memory_order_relaxed)) return;
 
     if (!_leadsOn) {
         // Push a sentinel (INT16_MIN) so downstream can mark the gap
+        _railRun = 0;
         _buf.pushOverwrite(INT16_MIN);
         _ready = true;
         return;
@@ -52,6 +60,23 @@ void ECGSensor::update() {
     // Read ADC and centre around zero
     int raw = adc1_get_raw(static_cast<adc1_channel_t>(Pins::ECG_ADC_CHANNEL));
     int16_t sample = static_cast<int16_t>(raw - SamplingCfg::ADC_MIDPOINT);
+
+    // Output pinned to a rail with leads on: the chip is latched, reset it via SDN.
+    const bool atRail = raw <= SamplingCfg::ADC_RAIL_MARGIN ||
+                        raw >= 4095 - SamplingCfg::ADC_RAIL_MARGIN;
+    _railRun = atRail ? _railRun + 1 : 0;
+    if (_railRun >= SamplingCfg::SATURATION_SAMPLES &&
+        (!_pulsedOnce || now - _lastPulse >= SamplingCfg::SDN_RETRY_MS)) {
+        digitalWrite(Pins::ECG_SDN, LOW);
+        _inShutdown    = true;
+        _shutdownStart = now;
+        _lastPulse     = now;
+        _pulsedOnce    = true;
+        _railRun       = 0;
+#if ENABLE_SERIAL_CAPTURE
+        Serial.printf("[ECG] Output saturated (adc=%d), resetting AD8232 via SDN\n", raw);
+#endif
+    }
 
     _buf.pushOverwrite(sample);
     _ready = true;
