@@ -86,6 +86,25 @@ class SyncManager(
         }
     }
 
+    /**
+     * Deletes a session locally and from Firestore (FR-SYNC-05) and audit-logs it. Runs in
+     * this manager's scope so leaving the screen cannot cancel it half-way.
+     */
+    fun deleteSessionEverywhere(sessionId: String) {
+        scope.launch {
+            val eventIndexes = database.eventDao().getEventsForSession(sessionId).map { it.sampleIndex }
+            database.sessionDao().deleteSessionById(sessionId)
+            database.readingDao().deleteReadingsForSession(sessionId)
+            database.eventDao().deleteEventsForSession(sessionId)
+            consentManager.log(action = AuditAction.SESSION_DELETED, sessionId = sessionId)
+            Timber.i("Deleted session $sessionId locally")
+
+            if (firebaseRepository.ensureSignedIn()) {
+                firebaseRepository.deleteSession(sessionId, eventIndexes)
+            }
+        }
+    }
+
     suspend fun deleteEverywhere() {
         consentManager.deleteAllUserData()
         try {

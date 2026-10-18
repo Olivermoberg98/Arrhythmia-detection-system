@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ecgmonitor.app.data.database.entities.AuditAction
 import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
 import com.ecgmonitor.app.data.database.entities.HealthStatus
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
@@ -159,7 +160,8 @@ fun SessionDetailScreen(
                 title = { Text("Delete recording?", color = Color.White, fontWeight = FontWeight.Bold) },
                 text = {
                     Text(
-                        "This will permanently delete the recording and all associated events. This cannot be undone.",
+                        "This will permanently delete the recording and all associated events, on this " +
+                            "device and in the cloud. This cannot be undone.",
                         color = MedicalTextSecondary,
                         fontSize = 14.sp
                     )
@@ -187,6 +189,20 @@ fun SessionDetailScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                NotMedicalDeviceNotice()
+
+                if (!data.session.isComplete) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Incomplete recording — it was interrupted (app closed or device " +
+                            "disconnected), so it ends early and its statistics cover only the saved part.",
+                        color = MedicalOrange,
+                        fontSize = 13.sp
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 StatisticsSection(session = data.session, modifier = Modifier.fillMaxWidth())
@@ -311,6 +327,7 @@ fun SessionDetailScreen(
                             exportManager.exportToPdf(data).fold(
                                 onSuccess = { file ->
                                     exportStatus = true to "PDF saved to ${file.name}"
+                                    viewModel.logExport(sessionId, AuditAction.SESSION_EXPORTED_PDF)
                                     shareFile(context, file, "application/pdf")
                                 },
                                 onFailure = { exportStatus = false to "PDF export failed: ${it.message}" }
@@ -327,6 +344,7 @@ fun SessionDetailScreen(
                             exportManager.exportToCsv(data).fold(
                                 onSuccess = { file ->
                                     exportStatus = true to "CSV saved to ${file.name}"
+                                    viewModel.logExport(sessionId, AuditAction.SESSION_EXPORTED_CSV)
                                     shareFile(context, file, "text/csv")
                                 },
                                 onFailure = { exportStatus = false to "CSV export failed: ${it.message}" }

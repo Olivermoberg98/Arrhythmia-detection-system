@@ -2,6 +2,7 @@ package com.ecgmonitor.app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ecgmonitor.app.data.consent.ConsentManager
 import com.ecgmonitor.app.ui.theme.MedicalCardBackground
 import com.ecgmonitor.app.ui.theme.MedicalCyan
 import com.ecgmonitor.app.ui.theme.MedicalDarkBackground
@@ -114,7 +117,14 @@ fun ConsentScreen(
                 ConsentSection(
                     icon = Icons.Default.Security,
                     title = "How your data is stored",
-                    body = "All data is stored locally on this device only. It is not transmitted to any server, cloud service, or third party. Data remains on your device until you delete it. Uninstalling the app permanently deletes all stored data."
+                    body = "Recordings are stored on this device. After each recording, a summary is " +
+                        "uploaded to Google Firebase (Cloud Firestore) under an anonymous account: the " +
+                        "session name, times and duration, heart-rate statistics, beat counts, health " +
+                        "status, model-quality statistics, and each detected arrhythmia event (time, " +
+                        "type, confidence). The raw ECG waveform never leaves this device, and no name, " +
+                        "email or contact details are sent. Deleting a recording, or using Delete All " +
+                        "Data, also deletes its cloud copy. Uninstalling the app deletes the data on " +
+                        "this device only — use Delete All Data first to remove the cloud copy as well."
                 )
 
                 ConsentSection(
@@ -130,7 +140,7 @@ fun ConsentScreen(
                 )
 
                 Text(
-                    "Consent version 1.0 · Last updated January 2026",
+                    "Consent version ${ConsentManager.CONSENT_VERSION} · Last updated October 2026",
                     fontSize = 11.sp,
                     color = MedicalTextSecondary,
                     textAlign = TextAlign.Center,
@@ -183,12 +193,31 @@ fun ConsentScreen(
 @Composable
 private fun ConsentSection(icon: ImageVector, title: String, body: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = MedicalCyan, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
         Text(body, fontSize = 13.sp, color = MedicalTextSecondary, lineHeight = 20.sp)
         HorizontalDivider(color = MedicalTextSecondary.copy(alpha = 0.15f))
+    }
+}
+/** Compact "not a medical device" notice for screens that show classifications (FR-ARR-10). */
+@Composable
+fun NotMedicalDeviceNotice(modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Default.Info,
+            contentDescription = null,
+            tint = MedicalTextSecondary,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            "Educational tool, not a medical device. Not for diagnosis — seek medical advice for any symptoms.",
+            fontSize = 11.sp,
+            color = MedicalTextSecondary,
+            lineHeight = 14.sp
+        )
     }
 }

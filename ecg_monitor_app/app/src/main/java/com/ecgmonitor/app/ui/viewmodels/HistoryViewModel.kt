@@ -3,6 +3,7 @@ package com.ecgmonitor.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ecgmonitor.app.EcgMonitorApp
 import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
@@ -23,6 +24,8 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         database = EcgDatabase.getDatabase(application),
         mitBihLoader = MitBihDataLoader(application)
     )
+
+    private val syncManager = (application as EcgMonitorApp).syncManager
 
     private val _sortOrder = MutableStateFlow(SortOrder.MOST_RECENT)
     val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
@@ -55,10 +58,8 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         _sortOrder.value = order
     }
 
+    /** Deletes the local and the cloud copy (FR-SYNC-05). */
     fun deleteSession(sessionId: String) {
-        viewModelScope.launch {
-            repository.deleteSession(sessionId)
-            Timber.i("Deleted session: $sessionId")
-        }
+        syncManager.deleteSessionEverywhere(sessionId)
     }
 }

@@ -2,6 +2,7 @@ package com.ecgmonitor.app.data.ble
 
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import com.juul.kable.AndroidPeripheral
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
@@ -309,7 +310,8 @@ class BleManager(private val context: Context) {
      * while you investigate. Update [STREAM_PACKET_SIZE] and this parser once the new
      * layout is confirmed.
      */
-    private fun parseStreamPacket(bytes: ByteArray) {
+    @VisibleForTesting
+    internal fun parseStreamPacket(bytes: ByteArray) {
         rawPacketCount++
 
         // ── Inter-packet gap diagnostic ───────────────────────────────────────────
@@ -433,7 +435,8 @@ class BleManager(private val context: Context) {
      *
      * The beat window is sent to the ViewModel where TFLite runs classification.
      */
-    private fun parseBeatPacket(bytes: ByteArray) {
+    @VisibleForTesting
+    internal fun parseBeatPacket(bytes: ByteArray) {
         if (bytes.size < BEAT_PACKET_SIZE) {
             Timber.w("Beat packet too short: ${bytes.size}B (expected $BEAT_PACKET_SIZE)")
             return

@@ -1,5 +1,6 @@
 package com.ecgmonitor.app.data.database.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.ecgmonitor.app.data.models.DataSource
@@ -33,6 +34,9 @@ data class EcgSessionEntity(
     val notes: String? = null,
     /** Timestamp of a successful cloud upload; null means the session is still pending sync. */
     val uploadedAt: Long? = null,
+    /** False while recording and after a crash or BLE loss cut the recording short (FR-REC-04). */
+    @ColumnInfo(defaultValue = "1")
+    val isComplete: Boolean = true,
 
     // region Model health metrics
     //

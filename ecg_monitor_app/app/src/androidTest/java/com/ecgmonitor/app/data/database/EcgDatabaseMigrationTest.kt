@@ -107,16 +107,17 @@ class EcgDatabaseMigrationTest {
 
     @Test
     fun migrateAll_fromVersion3() {
-        // The full chain, so an install that skipped a release still lands on v5.
+        // The full chain, so an install that skipped a release still lands on v6.
         // Starts at v3: schemas 1-2 were never exported, so 1->2 and 2->3 are untestable here.
         helper.createDatabase(TEST_DB, VERSION_3).close()
 
         val db = helper.runMigrationsAndValidate(
             TEST_DB,
-            VERSION_5,
+            VERSION_6,
             true,
             EcgDatabase.MIGRATION_3_4,
-            EcgDatabase.MIGRATION_4_5
+            EcgDatabase.MIGRATION_4_5,
+            EcgDatabase.MIGRATION_5_6
         )
 
         // Tables added along the way are present, and v5 columns reached the end.
@@ -134,6 +135,7 @@ class EcgDatabaseMigrationTest {
             assertTrue("rateFlag missing", "rateFlag" in columns)
             assertTrue("supraventricularCount missing", "supraventricularCount" in columns)
             assertTrue("afibCount should be gone", "afibCount" !in columns)
+            assertTrue("isComplete missing", "isComplete" in columns)
         }
         db.close()
     }
@@ -202,12 +204,52 @@ class EcgDatabaseMigrationTest {
         db.close()
     }
 
+    @Test
+    fun migrate5To6_matchesTheEntitySchema() {
+        helper.createDatabase(TEST_DB, VERSION_5).close()
+
+        helper.runMigrationsAndValidate(
+            TEST_DB,
+            VERSION_6,
+            true,
+            EcgDatabase.MIGRATION_5_6
+        ).close()
+    }
+
+    @Test
+    fun migrate5To6_marksExistingSessionsComplete() {
+        // Pre-v6 sessions were only ever written whole on Stop, so none is incomplete.
+        helper.createDatabase(TEST_DB, VERSION_4).apply {
+            execSQL(INSERT_V4_SESSION)
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB,
+            VERSION_6,
+            true,
+            EcgDatabase.MIGRATION_4_5,
+            EcgDatabase.MIGRATION_5_6
+        )
+
+        db.query(
+            "SELECT isComplete, totalBeats FROM ecg_sessions WHERE id = ?",
+            arrayOf(MONITORED_SESSION_ID)
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1, cursor.getInt(0))
+            assertEquals(150, cursor.getInt(1))
+        }
+        db.close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
 
         const val VERSION_3 = 3
         const val VERSION_4 = 4
         const val VERSION_5 = 5
+        const val VERSION_6 = 6
 
         const val TOLERANCE = 1e-4
 

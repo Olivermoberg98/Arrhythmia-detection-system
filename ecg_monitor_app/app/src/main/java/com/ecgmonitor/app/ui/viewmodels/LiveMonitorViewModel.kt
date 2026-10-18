@@ -22,7 +22,10 @@ import com.ecgmonitor.app.data.models.DataSource
 import com.ecgmonitor.app.data.models.EcgReading
 import com.ecgmonitor.app.data.models.EcgSession
 import com.ecgmonitor.app.data.repository.EcgRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,9 +119,20 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
     // region Recording buffers (accessed only from the Default dispatcher)
 
+    /** Readings not yet written to the database; flushed every [FLUSH_EVERY_SAMPLES]. */
     private val recordingBuffer       = mutableListOf<EcgReading>()
     private val recordingEventsBuffer = mutableListOf<ArrhythmiaEvent>()
     private var recordingStartTime    = 0L
+    private var recordedSampleCount   = 0
+    private var flushedEventCount     = 0
+
+    /**
+     * Recording writes run one at a time, in order, so the final session update always
+     * lands last. The scope outlives the ViewModel so a save started in [onCleared] finishes.
+     */
+    private val recordingLock   = Any()
+    private val recordingWrites = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+    private val writerScope     = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Heart-rate samples collected during recording. Each confirmed beat appends
@@ -169,6 +183,16 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     // region Init — wire BLE flows
 
     init {
+        writerScope.launch {
+            for (write in recordingWrites) {
+                try {
+                    write()
+                } catch (e: Exception) {
+                    Timber.e(e, "Recording write failed")
+                }
+            }
+        }
+
         // ── ECG stream: primary data path ─────────────────────────────────────────
         // Collected on Dispatchers.Default so all packet processing — list management,
         // beat detection, recording buffer — runs off the main thread.
@@ -239,8 +263,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                     _visibleArrhythmiaEvents.value = currentEvents
 
                     // Add to recording buffer if recording
-                    if (_isRecording.value) {
-                        recordingEventsBuffer.add(event)
+                    synchronized(recordingLock) {
+                        if (_isRecording.value) recordingEventsBuffer.add(event)
                     }
 
                     Timber.i(
@@ -280,8 +304,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     }
                     is ConnectionState.Disconnected -> {
-                        if (_isRecording.value) stopRecording()
                         _uiState.value = LiveMonitorUiState.Idle
+                        if (_isRecording.value) stopRecording(interrupted = true)
                     }
                     is ConnectionState.Error -> {
                         _uiState.value = LiveMonitorUiState.Error(state.message)
@@ -334,7 +358,13 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         }
         _ecgReadings.value = readingDeque.toList()
 
-        if (_isRecording.value) recordingBuffer.addAll(newReadings)
+        synchronized(recordingLock) {
+            if (_isRecording.value) {
+                recordingBuffer.addAll(newReadings)
+                recordedSampleCount += newReadings.size
+                if (recordingBuffer.size >= FLUSH_EVERY_SAMPLES) flushRecording()
+            }
+        }
 
         drainPendingTWaves()
     }
@@ -417,7 +447,9 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
             val displayHr = smoothedHeartRate.toInt().coerceIn(30, 250)
             _heartRate.value = displayHr
 
-            if (_isRecording.value) recordingHrSamples.add(displayHr)
+            synchronized(recordingLock) {
+                if (_isRecording.value) recordingHrSamples.add(displayHr)
+            }
         }
     }
 
@@ -457,6 +489,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         monitor.reset()
         _monitoringSnapshot.value = null
         recordingSampleIndex = 0
+        recordedSampleCount  = 0
+        flushedEventCount    = 0
         recordingStartTime   = System.currentTimeMillis()
         _isRecording.value   = true
         _ecgReadings.value   = emptyList()
@@ -476,65 +510,106 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         Timber.i("Recording started")
     }
 
-    fun stopRecording() {
+    /**
+     * Writes buffered readings and new events, and refreshes the session row, still
+     * flagged incomplete (FR-REC-03/04). Called every [FLUSH_EVERY_SAMPLES] while recording.
+     */
+    private fun flushRecording() {
+        val session = _currentSession.value ?: return
+        val now = System.currentTimeMillis()
+        enqueueRecordingWrite(
+            session.copy(endTime = now, duration = (now - recordingStartTime) / 1_000f),
+            isComplete = false
+        )
+    }
+
+    /** Snapshots the recording buffers and queues the write. Call under [recordingLock]. */
+    private fun enqueueRecordingWrite(
+        session: EcgSession,
+        isComplete: Boolean,
+        onSaved: (suspend () -> Unit)? = null
+    ) {
+        val newReadings = recordingBuffer.toList()
+        recordingBuffer.clear()
+        val allEvents = recordingEventsBuffer.toList()
+        val newEvents = allEvents.drop(flushedEventCount)
+        flushedEventCount = allEvents.size
+        val totalSamples = recordedSampleCount
+        val metrics = EcgRepository.SessionMetrics(
+            heartRate  = heartRateStats(),
+            monitoring = monitor.snapshot()
+        )
+
+        recordingWrites.trySend {
+            try {
+                repository.saveRecordingChunk(
+                    sessionMetadata = session.copy(totalSamples = totalSamples),
+                    chunk           = EcgRepository.RecordingChunk(newReadings, newEvents, allEvents),
+                    metrics         = metrics,
+                    isComplete      = isComplete
+                )
+            } catch (e: Exception) {
+                // Only the final write reports to the UI; earlier chunk failures are just logged.
+                if (onSaved != null) _uiState.value = LiveMonitorUiState.Error("Failed to save: ${e.message}")
+                throw e
+            }
+            onSaved?.invoke()
+        }
+    }
+
+    private fun heartRateStats(): EcgRepository.HeartRateStats? {
+        val hrSnapshot = recordingHrSamples.toList()
+        if (hrSnapshot.isEmpty()) return null
+        return EcgRepository.HeartRateStats(
+            avg = hrSnapshot.average().toInt().coerceIn(30, 250),
+            min = hrSnapshot.min().coerceIn(30, 250),
+            max = hrSnapshot.max().coerceIn(30, 250)
+        )
+    }
+
+    /**
+     * Ends the recording. [interrupted] (BLE loss) saves it flagged incomplete
+     * (FR-REC-04); anything shorter than [MIN_RECORDING_SECONDS] is discarded (FR-REC-06).
+     */
+    fun stopRecording(interrupted: Boolean = false) {
+        synchronized(recordingLock) { stopRecordingLocked(interrupted) }
+    }
+
+    private fun stopRecordingLocked(interrupted: Boolean) {
         if (!_isRecording.value) return
         _isRecording.value = false
 
         val endTime  = System.currentTimeMillis()
         val duration = (endTime - recordingStartTime) / 1_000f
-        val session  = _currentSession.value?.copy(
-            endTime      = endTime,
-            totalSamples = recordingBuffer.size,
-            duration     = duration
-        )
+        val session  = _currentSession.value?.copy(endTime = endTime, duration = duration)
+        _currentSession.value = null
+        if (session == null) return
 
-        if (session != null && recordingBuffer.isNotEmpty()) {
-            val hrSnapshot = recordingHrSamples.toList()
-            val heartRateStats = if (hrSnapshot.isNotEmpty()) {
-                EcgRepository.HeartRateStats(
-                    avg = hrSnapshot.average().toInt().coerceIn(30, 250),
-                    min = hrSnapshot.min().coerceIn(30, 250),
-                    max = hrSnapshot.max().coerceIn(30, 250)
+        if (duration < MIN_RECORDING_SECONDS || recordedSampleCount == 0) {
+            recordingWrites.trySend { repository.deleteSession(session.id) }
+            _uiState.value = LiveMonitorUiState.Error(
+                "Recording too short — at least ${MIN_RECORDING_SECONDS.toInt()} s is needed, " +
+                        "so it was not saved"
+            )
+            Timber.i("Discarded ${duration}s recording ${session.id}")
+        } else {
+            val samples = recordedSampleCount
+            enqueueRecordingWrite(session, isComplete = !interrupted) {
+                syncManager.syncSessionAsync(session.id)
+                Timber.i(
+                    "Saved session ${session.id} — $samples samples, ${duration}s, " +
+                            "complete=${!interrupted}"
                 )
-            } else null
-
-            // Snapshot before the coroutine runs — the monitor keeps mutating on new beats.
-            val monitoringSummary = monitor.snapshot()
-
-            viewModelScope.launch {
-                try {
-                    val sessionId = repository.saveSession(
-                        readings        = recordingBuffer.toList(),
-                        events          = recordingEventsBuffer.toList(),
-                        sessionMetadata = session,
-                        sessionName     = null,
-                        metrics         = EcgRepository.SessionMetrics(
-                            heartRate  = heartRateStats,
-                            monitoring = monitoringSummary
-                        )
-                    )
-                    syncManager.syncSessionAsync(sessionId)
-                    Timber.i(
-                        "Saved session $sessionId — ${recordingBuffer.size} samples, " +
-                                "${duration}s, HR avg=${heartRateStats?.avg}, " +
-                                "model=${monitoringSummary.modelVersion} " +
-                                "lowConf=${"%.2f".format(monitoringSummary.lowConfidenceRate)} " +
-                                "drift=${"%.1f".format(monitoringSummary.driftScore)}σ " +
-                                "rate=${monitoringSummary.rateFlag}"
-                    )
-                    _uiState.value = LiveMonitorUiState.RecordingSaved(sessionId)
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to save recording")
-                    _uiState.value = LiveMonitorUiState.Error("Failed to save: ${e.message}")
-                } finally {
-                    recordingBuffer.clear()
-                    recordingEventsBuffer.clear()
-                    recordingHrSamples.clear()
-                }
+                _uiState.value = LiveMonitorUiState.RecordingSaved(session.id)
             }
         }
+        clearRecordingBuffers()
+    }
 
-        _currentSession.value = null
+    private fun clearRecordingBuffers() {
+        recordingBuffer.clear()
+        recordingEventsBuffer.clear()
+        recordingHrSamples.clear()
     }
 
     // endregion
@@ -577,7 +652,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     override fun onCleared() {
         super.onCleared()
         classifier.close()
-        if (_isRecording.value) stopRecording()
+        if (_isRecording.value) stopRecording(interrupted = true)
+        recordingWrites.close()
     }
 
     // endregion
@@ -622,6 +698,12 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * without making the display feel laggy.
          */
         private const val HR_EMA_ALPHA = 0.25f
+
+        /** Readings per incremental write: 5 s at 250 Hz, the most a crash can lose. */
+        private const val FLUSH_EVERY_SAMPLES = 1_250
+
+        /** Shorter recordings are discarded (FR-REC-06). */
+        private const val MIN_RECORDING_SECONDS = 10f
 
 
     }

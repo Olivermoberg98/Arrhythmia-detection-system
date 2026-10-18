@@ -27,7 +27,7 @@ import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
         ConsentEntity::class,
         AuditLogEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -45,6 +45,7 @@ abstract class EcgDatabase : RoomDatabase() {
         private const val VERSION_3 = 3
         private const val VERSION_4 = 4
         private const val VERSION_5 = 5
+        private const val VERSION_6 = 6
 
         @Volatile
         private var INSTANCE: EcgDatabase? = null
@@ -160,6 +161,18 @@ abstract class EcgDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Adds the isComplete flag introduced in version 6 (FR-REC-04). Sessions saved
+         * before incremental writes existed were only ever written whole, so default 1.
+         */
+        val MIGRATION_5_6 = object : Migration(VERSION_5, VERSION_6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE ecg_sessions ADD COLUMN isComplete INTEGER NOT NULL DEFAULT 1"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): EcgDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -167,7 +180,7 @@ abstract class EcgDatabase : RoomDatabase() {
                     EcgDatabase::class.java,
                     "ecg_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { INSTANCE = it }
             }

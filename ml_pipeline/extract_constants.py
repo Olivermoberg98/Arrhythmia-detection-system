@@ -14,7 +14,10 @@ Usage
 Output
 ------
   model_metadata.json — beat/RR shape, classes, thresholds and training-split
-  scalers, read by the app's ArrhythmiaClassifier. Copy it into the app's
+  scalers, read by the app's ArrhythmiaClassifier. "version" is the training
+  run id taken from the results filename (results_ensemble_20261015_212815.pkl
+  -> "ensemble_20261015_212815"); the app stores it with every session as
+  modelVersion, so it must identify the run, not a fixed string (RMF-001 OA-6). Copy it into the app's
   assets/ together with the .tflite it was extracted for.
 """
 
@@ -58,6 +61,7 @@ def write_mobile_metadata(
     rr_mean: np.ndarray,
     rr_std: np.ndarray,
     thresholds: list[float],
+    version: str,
     out: Path,
 ) -> None:
     """Generate JSON metadata for Android app."""
@@ -75,7 +79,7 @@ def write_mobile_metadata(
     }
     
     metadata = {
-        "version": "1.0.0",
+        "version": version,
         "beat_length": int(meta.get("beat_length", 250)),
         "n_rr_features": int(meta.get("n_rr_features", 3)),
         "sample_rate_hz": 250,
@@ -116,6 +120,8 @@ def main():
     parser.add_argument("--results",    required=True,
                         help="results_XXXXXX.pkl containing thresholds")
     parser.add_argument("--out",        default="src/ml/model_metadata.json")
+    parser.add_argument("--version",    default=None,
+                        help="model version; defaults to the run id in the --results filename")
     args = parser.parse_args()
 
     # ── Load ─────────────────────────────────────────────────────────────── #
@@ -123,6 +129,7 @@ def main():
     ecg_scaler = load_pkl(args.ecg_scaler)
     rr_scaler  = load_pkl(args.rr_scaler)
     results    = load_pkl(args.results)
+    version    = args.version or Path(args.results).stem.removeprefix("results_")
 
     # ── Extract scaler arrays ─────────────────────────────────────────────── #
     ecg_mean = np.asarray(ecg_scaler.mean_,  dtype=np.float32).ravel()
@@ -156,6 +163,7 @@ def main():
 
     # ── Sanity print ─────────────────────────────────────────────────────── #
     print("\n── Extracted constants summary ──────────────────────────────")
+    print(f"  version           : {version}")
     print(f"  beat_length       : {beat_len}")
     print(f"  n_rr_features     : {n_rr}")
     print(f"  class_names       : {class_names}")
@@ -195,7 +203,7 @@ def main():
 
     print("Generating model_metadata.json for Android...")
     write_mobile_metadata(
-        meta, ecg_mean, ecg_std, rr_mean, rr_std, thresholds, out_path
+        meta, ecg_mean, ecg_std, rr_mean, rr_std, thresholds, version, out_path
     )
 
     print("\nAll done ✓")
