@@ -122,6 +122,7 @@ class FirebaseRepository {
         "otherArrhythmiaCount" to session.otherArrhythmiaCount,
         "healthStatus"         to session.healthStatus.name,
         "totalSamples"         to session.totalSamples,
+        "isComplete"           to session.isComplete,
         "uploadedAt"           to System.currentTimeMillis(),
         // Model-health scalars. Aggregates only — consistent with the metadata-only split.
         "modelVersion"          to session.modelVersion,
@@ -155,6 +156,35 @@ class FirebaseRepository {
                 ))
             }
             batch.commit().await()
+        }
+    }
+
+    /**
+     * Deletes one session's cloud copy (FR-SYNC-05). Documents are addressed by their
+     * known ids rather than a query, so offline the SDK queues the delete and sends it
+     * on reconnect.
+     *
+     * @return true only if the delete was acknowledged by the server.
+     */
+    suspend fun deleteSession(sessionId: String, eventSampleIndexes: List<Int>): Boolean {
+        val uid = auth.currentUser?.uid ?: return false
+        val user = firestore.collection("users").document(uid)
+        val refs = listOf(user.collection("sessions").document(sessionId)) +
+            eventSampleIndexes.map { user.collection("events").document("${sessionId}_$it") }
+        return try {
+            val acknowledged = withTimeoutOrNull(UPLOAD_TIMEOUT_MS) {
+                refs.chunked(BATCH_LIMIT).forEach { chunk ->
+                    val batch = firestore.batch()
+                    chunk.forEach { batch.delete(it) }
+                    batch.commit().await()
+                }
+                true
+            }
+            if (acknowledged == null) Timber.w("Cloud delete of $sessionId queued, not yet acknowledged")
+            acknowledged == true
+        } catch (e: Exception) {
+            Timber.e(e, "Cloud delete failed for session $sessionId")
+            false
         }
     }
 

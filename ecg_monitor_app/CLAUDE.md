@@ -36,10 +36,11 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 - **Screens (Compose)** — `app/src/main/java/com/ecgmonitor/app/ui/screens/` (`LiveMonitorScreen`, `HistoryScreen`, `SessionDetailScreen`, `SettingsScreen`, `ConsentScreen`)
 - **ViewModels** — `app/src/main/java/com/ecgmonitor/app/ui/viewmodels/`, all extend `AndroidViewModel`, expose state via `StateFlow`
 - **Repositories** — `app/src/main/java/com/ecgmonitor/app/data/repository/EcgRepository.kt`, `data/consent/ConsentManager.kt`
-- **Room DB** — `app/src/main/java/com/ecgmonitor/app/data/database/` (`EcgDatabase.kt` is at version 5 with explicit `MIGRATION_1_2`..`MIGRATION_4_5` — bump the version and add a migration, don't rely on destructive fallback in release)
+- **Room DB** — `app/src/main/java/com/ecgmonitor/app/data/database/` (`EcgDatabase.kt` is at version 6 with explicit `MIGRATION_1_2`..`MIGRATION_5_6` — bump the version and add a migration, don't rely on destructive fallback in release)
 - **BLE** — `app/src/main/java/com/ecgmonitor/app/data/ble/BleManager.kt`, built on **Kable** (`com.juul.kable`)
 - **ML inference** — `app/src/main/java/com/ecgmonitor/app/data/ml/ArrhythmiaClassifier.kt`, loads `assets/arrhythmia_model.tflite` + `assets/model_metadata.json`; converts firmware ADC counts to mV (`ADC_COUNTS_TO_MV`) before normalising; picks the class with `decide()` = `argmax(scores / thresholds)`, the rule the thresholds were tuned for. `isValid` (`score >= threshold`) is always true while the thresholds sum to ≤ 1, so it rarely gates anything
 - **Beat timing** — the firmware emits each beat at the *next* R-peak (it needs the real `post_rr`), so beat packets arrive one RR interval late. Anything that places a beat in time must use `BeatWindow.timestampMs` (the R-peak), not arrival time — see `LiveMonitorViewModel.eventSampleIndex`
+- **Recording persistence** — `LiveMonitorViewModel` writes each recording every 5 s through `EcgRepository.saveRecordingChunk` (one serial writer), with the session row flagged `isComplete = false` until Stop; a crash or BLE loss leaves it incomplete, and recordings under 10 s are discarded (FR-REC-03..06)
 - **Model health** — `data/ml/SignalQualityAnalyzer.kt` (per-beat signal quality) and `data/ml/ClassificationMonitor.kt` (confidence, drift, beat-rate plausibility; scalar summaries only, safe to sync)
 - **Demo data / export** — `data/mitbih/MitBihDataLoader.kt` (bundled MIT-BIH records), `utils/ExportManager.kt`
 - **Firebase sync** — `app/src/main/java/com/ecgmonitor/app/data/firebase/FirebaseRepository.kt`, `SyncManager.kt`
@@ -65,7 +66,7 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 - **Firebase sync uploads metadata only** (session stats + arrhythmia events, batched 500/batch) — raw waveform samples intentionally stay local-only in Room to stay free-tier compatible. Preserve this split when touching sync code.
 - **Commit message style**: `Update (Scope): Description`, e.g. `Update (App): Fix the data base storage via Firebase` — scope is typically `App`, `ESP`, or the changed area.
 - **Branches**: short-lived `feat/*` / `fix/*` branches merged to `main` via PR.
-- **Test coverage is limited to the ML monitoring layer** (`SignalQualityAnalyzerTest`, `ClassificationMonitorTest`) plus `EcgDatabaseMigrationTest` (v3→v5 only: schemas 1–2 were never exported, so `MIGRATION_1_2`/`MIGRATION_2_3` are untested) — don't assume repositories, ViewModels, BLE parsing, or the classifier itself are under test (see TODO below).
+- **Test coverage is limited to the ML monitoring layer** (`SignalQualityAnalyzerTest`, `ClassificationMonitorTest`), BLE packet parsing (`BleManagerParseTest`, which needs `unitTests.isReturnDefaultValues` for its stub `Context`) and `EcgDatabaseMigrationTest` (v3→v6 only: schemas 1–2 were never exported, so `MIGRATION_1_2`/`MIGRATION_2_3` are untested) — don't assume repositories, ViewModels, or the classifier itself are under test (see TODO below).
 - **No ktlint/.editorconfig** — match the surrounding file's style manually; there's no automated formatter to defer to. **detekt** is configured (default ruleset, `app/detekt-baseline.xml` suppresses pre-existing findings) — new code should pass `.\gradlew.bat detekt` cleanly; don't add to the baseline to silence a new finding, fix it or ask.
 
 ## My working preferences
@@ -77,13 +78,8 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 
 ## TODO
 
-- **Open actions from the regulatory review** (full list and status: `docs/regulatory/RMF-001_RiskManagementFile.md` §6). When you fix one, remove its line here and update its OA status in RMF-001:
-  - **OA-1** — `ConsentScreen` says data "is not transmitted to any server, cloud service", but Firestore sync runs after consent. Fix the text and bump `CONSENT_VERSION` so users are re-prompted. Most serious one (GDPR).
-  - **OA-2** — `HistoryViewModel.deleteSession` deletes locally only; the cloud copy stays. `SESSION_DELETED` and `SESSION_EXPORTED_PDF/CSV` are never logged.
-  - **OA-3** — recordings are buffered in memory and written only on Stop, so a crash loses everything. No incomplete flag, no 10 s minimum (FR-REC-03..06).
-  - **OA-4** — the "not a medical device" notice is only on `ConsentScreen`; add it to Live Monitor and Session Detail (FR-ARR-10).
-  - **OA-5** — `res/xml/data_extraction_rules.xml` is the empty template; with targetSdk 34 device-to-device transfer probably still copies the database (NFR-08).
-- **Add real test coverage, prioritizing `BleManager.parseStreamPacket`** (and `parseBeatPacket`) before refactoring. `parseStreamPacket` is the one flagged complexity issue worth taking seriously (`CyclomaticComplexMethod` + `LongMethod` in `app/detekt-baseline.xml`), and BLE parsing + the classifier (incl. the ADC→mV conversion) currently have zero tests — don't simplify either without tests to catch regressions first.
+- **Verify the regulatory open-action fixes on a device** (OA-1..5 are implemented, status in `docs/regulatory/RMF-001_RiskManagementFile.md` §6): run `connectedAndroidTest` for the v5→v6 migration, and TC-REC-03..06 (force-kill / BLE loss / <10 s recording), TC-SYNC-05 (single-session cloud delete), TC-PRIV-01 (backup and device transfer exclude the database).
+- **Add test coverage for the classifier** (incl. the ADC→mV conversion), which still has none. BLE parsing is now covered by `BleManagerParseTest`, so `parseStreamPacket` (`CyclomaticComplexMethod` + `LongMethod` in `app/detekt-baseline.xml`) can be simplified against it.
 
 ## Open questions
 

@@ -48,6 +48,11 @@ android {
         compose = true
     }
 
+    // Lets JVM tests build a stub Context (BleManagerParseTest); android.jar stubs return defaults.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

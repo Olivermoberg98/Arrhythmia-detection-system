@@ -352,15 +352,15 @@
 
 Defects found during the v1.1 review (code inspection, 2026-10-16). They affect implemented software and need code changes, which are outside this document update.
 
-| ID | Finding | Affects | Requirement |
-|----|---------|---------|-------------|
-| OA-1 | Consent text says data "is not transmitted to any server, cloud service, or third party", but session metadata and events upload to Firestore automatically after consent. `CONSENT_VERSION` was not incremented | RISK-005, DPIA-001 | FR-CON-08 |
-| OA-2 | Deleting a single session deletes only the local copy; the cloud copy remains. Session deletion and PDF/CSV export are not written to the audit log | RISK-005 | FR-SYNC-05, FR-AUD-01 |
-| OA-3 | Recordings are buffered in memory and written only on Stop; a crash loses the whole recording. No incomplete flag, no minimum length | RISK-006 | FR-REC-03..06 |
-| OA-4 | The "not a medical device" notice is shown only on the consent screen | RISK-001, RISK-007 | FR-ARR-10 |
-| OA-5 | `data_extraction_rules.xml` is the empty template; with targetSdk 34, device-to-device transfer probably still includes the database (to be confirmed) | RISK-005 | NFR-08 |
-| OA-6 | `model_metadata.json` version is "1.0.0" for every model, and that is what sessions store as `modelVersion`; it does not identify the shipped ensemble | RISK-014 | FR-ARR-08 |
-| OA-7 | MIT-BIH records 201 (validation) and 202 (DS2 test) are from the same subject, so threshold tuning and the test set share one patient. A property of the standard de Chazal split; recorded as a limitation, no fix planned | RISK-001 | — |
+| ID | Finding | Affects | Requirement | Status |
+|----|---------|---------|-------------|--------|
+| OA-1 | Consent text says data "is not transmitted to any server, cloud service, or third party", but session metadata and events upload to Firestore automatically after consent. `CONSENT_VERSION` was not incremented | RISK-005, DPIA-001 | FR-CON-08 | Implemented 2026-10-18: consent text discloses the Firestore upload; `CONSENT_VERSION` 3.0 re-prompts users. TC-CON-08 not run |
+| OA-2 | Deleting a single session deletes only the local copy; the cloud copy remains. Session deletion and PDF/CSV export are not written to the audit log | RISK-005 | FR-SYNC-05, FR-AUD-01 | Implemented 2026-10-18: `SyncManager.deleteSessionEverywhere` deletes the Firestore session and event documents (queued by the SDK if offline) and logs SESSION_DELETED; exports log SESSION_EXPORTED_PDF/CSV. TC-SYNC-05, TC-AUD-06 not run |
+| OA-3 | Recordings are buffered in memory and written only on Stop; a crash loses the whole recording. No incomplete flag, no minimum length | RISK-006 | FR-REC-03..06 | Implemented 2026-10-18: written every 5 s, `isComplete` flag (DB v6) set false on crash/BLE loss and shown in History and Session Detail; recordings under 10 s discarded. TC-REC-03..06 not run |
+| OA-4 | The "not a medical device" notice is shown only on the consent screen | RISK-001, RISK-007 | FR-ARR-10 | Implemented 2026-10-18: notice on Live Monitor and Session Detail. TC-ARR-12 not run |
+| OA-5 | `data_extraction_rules.xml` is the empty template; with targetSdk 34, device-to-device transfer probably still includes the database (to be confirmed) | RISK-005 | NFR-08 | Implemented 2026-10-18: all domains excluded from cloud backup and device transfer. TC-PRIV-01 not run |
+| OA-6 | `model_metadata.json` version is "1.0.0" for every model, and that is what sessions store as `modelVersion`; it does not identify the shipped ensemble | RISK-014 | FR-ARR-08 | Implemented 2026-10-18: version is the training-run id (`ensemble_20261015_212815`), set by `extract_constants.py` from the results filename. TC-ARR-10 not run |
+| OA-7 | MIT-BIH records 201 (validation) and 202 (DS2 test) are from the same subject, so threshold tuning and the test set share one patient. A property of the standard de Chazal split; recorded as a limitation, no fix planned | RISK-001 | — | Accepted limitation |
 
 ---
 

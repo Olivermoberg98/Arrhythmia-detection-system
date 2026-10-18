@@ -59,17 +59,72 @@ class EcgRepository(
         metrics: SessionMetrics = SessionMetrics()
     ): String {
         val sessionId = sessionMetadata.id
+        val sessionEntity = buildSessionEntity(
+            sessionMetadata.copy(totalSamples = readings.size), sessionName, events, metrics, isComplete = true
+        )
+
+        sessionDao.insertSession(sessionEntity)
+        readingDao.insertReadings(readings.map { it.toEntity(sessionId) })
+        eventDao.insertEvents(events.map { it.toEntity(sessionId) })
+
+        Timber.i("Saved session $sessionId: ${readings.size} readings, ${events.size} events")
+        return sessionId
+    }
+
+    /**
+     * One incremental write of a live recording.
+     *
+     * @param allEvents every event of the session so far, for the statistics.
+     */
+    data class RecordingChunk(
+        val newReadings: List<EcgReading>,
+        val newEvents: List<ArrhythmiaEvent>,
+        val allEvents: List<ArrhythmiaEvent>
+    )
+
+    /**
+     * Writes one chunk of a live recording (FR-REC-03): appends its new readings and
+     * events, then rewrites the session row from everything recorded so far, so a crash
+     * leaves a session with up-to-date statistics flagged incomplete.
+     * [sessionMetadata] carries the total sample count so far.
+     */
+    suspend fun saveRecordingChunk(
+        sessionMetadata: EcgSession,
+        chunk: RecordingChunk,
+        metrics: SessionMetrics,
+        isComplete: Boolean
+    ) {
+        val sessionId = sessionMetadata.id
+        readingDao.insertReadings(chunk.newReadings.map { it.toEntity(sessionId) })
+        eventDao.insertEvents(chunk.newEvents.map { it.toEntity(sessionId) })
+
+        // Keep a rename or notes made since the last chunk. uploadedAt resets: the row
+        // changed, so any earlier upload is stale and the session is pending again.
+        val existing = sessionDao.getSession(sessionId)
+        val entity = buildSessionEntity(
+            sessionMetadata, existing?.name, chunk.allEvents, metrics, isComplete
+        ).copy(notes = existing?.notes)
+        sessionDao.insertSession(entity)
+    }
+
+    private fun buildSessionEntity(
+        sessionMetadata: EcgSession,
+        sessionName: String?,
+        events: List<ArrhythmiaEvent>,
+        metrics: SessionMetrics,
+        isComplete: Boolean
+    ): EcgSessionEntity {
         val monitoring = metrics.monitoring
         val stats = calculateSessionStatistics(events, metrics.heartRate, monitoring)
 
-        val sessionEntity = EcgSessionEntity(
-            id = sessionId,
+        return EcgSessionEntity(
+            id = sessionMetadata.id,
             name = sessionName ?: generateSessionName(sessionMetadata),
             startTime = sessionMetadata.startTime,
             endTime = sessionMetadata.endTime ?: System.currentTimeMillis(),
             samplingRate = sessionMetadata.samplingRate,
             source = sessionMetadata.source,
-            totalSamples = readings.size,
+            totalSamples = sessionMetadata.totalSamples,
             durationSeconds = sessionMetadata.duration,
             averageHeartRate = stats.averageHeartRate,
             minHeartRate = stats.minHeartRate,
@@ -80,6 +135,7 @@ class EcgRepository(
             supraventricularCount = stats.supraventricularCount,
             otherArrhythmiaCount = stats.otherArrhythmiaCount,
             healthStatus = determineHealthStatus(stats),
+            isComplete = isComplete,
             modelVersion = monitoring?.modelVersion,
             meanConfidence = monitoring?.meanConfidence,
             lowConfidenceRate = monitoring?.lowConfidenceRate,
@@ -91,34 +147,23 @@ class EcgRepository(
             rateFlag = monitoring?.rateFlag?.name,
             meanInferenceMs = monitoring?.meanInferenceMs
         )
-
-        val readingEntities = readings.map { reading ->
-            EcgReadingEntity(
-                sessionId = sessionId,
-                sampleIndex = reading.sampleIndex,
-                timestamp = reading.timestamp,
-                voltage = reading.voltage
-            )
-        }
-
-        val eventEntities = events.map { event ->
-            ArrhythmiaEventEntity(
-                sessionId = sessionId,
-                sampleIndex = event.sampleIndex,
-                timestamp = event.timestamp,
-                type = event.type.name,
-                confidence = event.confidence,
-                description = event.description
-            )
-        }
-
-        sessionDao.insertSession(sessionEntity)
-        readingDao.insertReadings(readingEntities)
-        eventDao.insertEvents(eventEntities)
-
-        Timber.i("Saved session $sessionId: ${readings.size} readings, ${events.size} events")
-        return sessionId
     }
+
+    private fun EcgReading.toEntity(sessionId: String) = EcgReadingEntity(
+        sessionId = sessionId,
+        sampleIndex = sampleIndex,
+        timestamp = timestamp,
+        voltage = voltage
+    )
+
+    private fun ArrhythmiaEvent.toEntity(sessionId: String) = ArrhythmiaEventEntity(
+        sessionId = sessionId,
+        sampleIndex = sampleIndex,
+        timestamp = timestamp,
+        type = type.name,
+        confidence = confidence,
+        description = description
+    )
 
     suspend fun deleteSession(sessionId: String) {
         sessionDao.deleteSessionById(sessionId)

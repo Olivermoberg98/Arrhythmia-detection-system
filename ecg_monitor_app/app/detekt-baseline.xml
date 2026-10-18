@@ -2,9 +2,9 @@
 <SmellBaseline>
   <ManuallySuppressedIssues></ManuallySuppressedIssues>
   <CurrentIssues>
-    <ID>CyclomaticComplexMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
+    <ID>CyclomaticComplexMethod:BleManager.kt$BleManager$@VisibleForTesting internal fun parseStreamPacket(bytes: ByteArray)</ID>
     <ID>CyclomaticComplexMethod:SettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SettingsScreen( viewModel: SettingsViewModel, consentManager: ConsentManager, firebaseRepository: FirebaseRepository, syncManager: SyncManager )</ID>
-    <ID>LongMethod:BleManager.kt$BleManager$private fun parseStreamPacket(bytes: ByteArray)</ID>
+    <ID>LongMethod:BleManager.kt$BleManager$@VisibleForTesting internal fun parseStreamPacket(bytes: ByteArray)</ID>
     <ID>LongMethod:BleManager.kt$BleManager$suspend fun connect(device: BleDevice)</ID>
     <ID>LongParameterList:SessionDetailScreen.kt$( events: List&lt;ArrhythmiaEvent&gt;, currentFilter: EventFilter, onFilterClick: () -&gt; Unit, onEventClick: (ArrhythmiaEvent) -&gt; Unit, modifier: Modifier = Modifier, showFilterMenu: Boolean, onFilterMenuDismiss: () -&gt; Unit, onFilterSelect: (EventFilter) -&gt; Unit )</ID>
     <ID>MagicNumber:ArrhythmiaClassifier.kt$ArrhythmiaClassifier$100</ID>

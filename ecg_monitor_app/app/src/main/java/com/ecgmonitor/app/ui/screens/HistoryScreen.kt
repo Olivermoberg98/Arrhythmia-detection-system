@@ -180,6 +180,15 @@ private fun SessionCard(
                     color = Color.White,
                     modifier = Modifier.weight(1f)
                 )
+                if (!session.isComplete) {
+                    Text(
+                        "Incomplete",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MedicalOrange,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
                 HealthStatusBadge(status = session.healthStatus)
             }
 

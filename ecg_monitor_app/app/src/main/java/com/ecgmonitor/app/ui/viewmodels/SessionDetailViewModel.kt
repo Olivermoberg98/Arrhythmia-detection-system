@@ -3,6 +3,8 @@ package com.ecgmonitor.app.ui.viewmodels
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ecgmonitor.app.EcgMonitorApp
+import com.ecgmonitor.app.data.database.entities.AuditAction
 import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.database.entities.SessionWithData
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
@@ -55,6 +57,12 @@ class SessionDetailViewModel(application: Application) : AndroidViewModel(applic
     companion object {
         private const val PLAYBACK_WINDOW_SIZE = 2_000
         private const val PLAYBACK_BATCH_SIZE  = 10
+    }
+
+    /** Audit-logs a successful PDF/CSV export (FR-AUD-01). */
+    fun logExport(sessionId: String, action: AuditAction) {
+        val consentManager = getApplication<EcgMonitorApp>().consentManager
+        viewModelScope.launch { consentManager.log(action = action, sessionId = sessionId) }
     }
 
     fun loadSession(sessionId: String) {
