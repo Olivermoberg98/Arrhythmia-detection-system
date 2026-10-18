@@ -11,6 +11,7 @@ namespace Pins {
     constexpr int ECG_OUTPUT   = 1;    // Analog input (ADC1_CH0) - must be ADC1
     constexpr int ECG_LO_PLUS  = 42;   // Lead-off detect +
     constexpr int ECG_LO_MINUS = 41;   // Lead-off detect -
+    constexpr int ECG_SDN      = 21;   // AD8232 shutdown, active low
 
     // Must match ECG_OUTPUT: GPIO1 = ADC1_CH0 on ESP32-S3.
     constexpr int ECG_ADC_CHANNEL = 0;
@@ -47,6 +48,14 @@ namespace SamplingCfg {
     // ~0.5 Hz analogue high-pass (plus fast restore) and the digital HP both
     // need several time constants (~0.3 s each) to settle after a step.
     constexpr uint32_t LEAD_ON_SETTLE_SAMPLES = 500;     // 2 s @ 250 Hz
+
+    // Saturation recovery: the AD8232 can latch with its output pinned to a rail
+    // while leads read connected; pulsing SDN low resets it. The pulse is reported
+    // as lead-off, so it must outlast LEAD_OFF_DEBOUNCE_SAMPLES to reset the chain.
+    constexpr int      ADC_RAIL_MARGIN        = 5;       // counts from 0 / 4095
+    constexpr uint32_t SATURATION_SAMPLES     = 500;     // 2 s @ 250 Hz pinned
+    constexpr uint32_t SDN_PULSE_MS           = 500;
+    constexpr uint32_t SDN_RETRY_MS           = 5000;    // min gap between pulses
 
     // Ring buffer for beat extraction — must hold ≥ BEAT_PRE_SAMPLES.
     constexpr size_t ECG_BEAT_BUFFER_SIZE = 512;
