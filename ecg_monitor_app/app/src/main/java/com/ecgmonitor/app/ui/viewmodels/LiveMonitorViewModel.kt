@@ -12,8 +12,6 @@ import com.ecgmonitor.app.data.database.EcgDatabase
 import com.ecgmonitor.app.data.mitbih.MitBihDataLoader
 import com.ecgmonitor.app.data.ml.ArrhythmiaClassifier
 import com.ecgmonitor.app.data.ml.ClassificationMonitor
-import com.ecgmonitor.app.data.ml.MonitoringSummary
-import com.ecgmonitor.app.data.ml.SignalQuality
 import com.ecgmonitor.app.data.ml.SignalQualityAnalyzer
 import com.ecgmonitor.app.data.models.ClassificationResult
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
@@ -30,7 +28,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
@@ -61,18 +58,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
     private val monitor = ClassificationMonitor(
         modelVersion = classifier.modelMetadata.version
     )
-
-    /** Signal quality of the most recent beat window. */
-    private val _lastSignalQuality = MutableStateFlow<SignalQuality?>(null)
-    val lastSignalQuality: StateFlow<SignalQuality?> = _lastSignalQuality.asStateFlow()
-
-    /** T/R amplitude ratio, the lead-placement diagnostic. Null until measurable. */
-    private val _tOverR = MutableStateFlow<Float?>(null)
-    val tOverR: StateFlow<Float?> = _tOverR.asStateFlow()
-
-    /** Rolling model-health snapshot, updated on every classified beat. */
-    private val _monitoringSnapshot = MutableStateFlow<MonitoringSummary?>(null)
-    val monitoringSnapshot: StateFlow<MonitoringSummary?> = _monitoringSnapshot.asStateFlow()
 
 
     /**
@@ -168,9 +153,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
      * The min/max values are recomputed from scratch only when the evicted element
      * was the current extremum (O(n) at most twice per packet, amortised O(1)).
      */
-    /** Beats awaiting their T wave: (R-peak timestamp, R amplitude). */
-    private val pendingBeats = ArrayDeque<Pair<Long, Float>>()
-    private var smoothedTOverR = 0f
 
     /**
      * Timestamps (ms) of the last [MAX_BEAT_HISTORY] detected R-peaks,
@@ -216,19 +198,12 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                     val quality = qualityAnalyzer.analyze(beatWindow)
                     val result  = classifier.classify(beatWindow)
 
-                    // Heart rate and T/R both key off the firmware's R-peak, which
+                    // Heart rate keys off the firmware's R-peak, which
                     // is Pan-Tompkins with T-wave rejection. The app used to run its
                     // own threshold detector for the HR display; on a signal with
                     // T/R ~0.6 it counted T waves and read ~96% high.
                     recordBeat(beatWindow.timestampMs)
-                    if (beatWindow.ecgSamples.size > BEAT_PRE_SAMPLES) {
-                        pendingBeats.addLast(
-                            beatWindow.timestampMs to
-                                abs(beatWindow.ecgSamples[BEAT_PRE_SAMPLES].toFloat())
-                        )
-                    }
 
-                    _lastSignalQuality.value        = quality
                     _lastClassificationResult.value = result
                     _classificationResults.value    = result
 
@@ -236,7 +211,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                     val suppressed = eventType != null && !quality.isUsable
 
                     monitor.record(result, quality, suppressed)
-                    _monitoringSnapshot.value = monitor.snapshot()
 
                     if (suppressed) {
                         Timber.w(
@@ -366,61 +340,11 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
-        drainPendingTWaves()
     }
 
     // endregion
 
     // region Beat detection
-
-    /**
-     * Computes the T/R amplitude ratio for beats whose T-wave has now streamed in.
-     *
-     * T/R is the diagnostic for lead placement: in a correct lead II the R wave
-     * dominates and the ratio sits around 0.1-0.3. A ratio near 1 means the QRS
-     * is not projecting onto the electrode axis, which both starves the
-     * classifier of the morphology it was trained on and leaves a threshold
-     * detector unable to separate T waves from R peaks.
-     *
-     * Deliberately scale-invariant, so it stays meaningful while the absolute
-     * gain calibration is unresolved.
-     *
-     * Beats are queued because the T wave arrives after the beat packet does.
-     */
-    private fun drainPendingTWaves() {
-        val latest = readingDeque.lastOrNull()?.timestamp ?: return
-
-        while (pendingBeats.isNotEmpty() &&
-            latest >= pendingBeats.first().first + T_WINDOW_END_MS
-        ) {
-            val (rTime, rAmplitude) = pendingBeats.removeFirst()
-            if (rAmplitude < MIN_R_AMPLITUDE) continue
-
-            val tAmplitude = peakInTWindow(rTime)
-            if (tAmplitude > 0f) updateTOverR(tAmplitude / rAmplitude)
-        }
-    }
-
-    /** Largest excursion in the T-wave window following an R-peak. */
-    private fun peakInTWindow(rTime: Long): Float {
-        var peak = 0f
-        for (reading in readingDeque) {
-            if (reading.timestamp - rTime in T_WINDOW_START_MS..T_WINDOW_END_MS) {
-                val magnitude = abs(reading.voltage)
-                if (magnitude > peak) peak = magnitude
-            }
-        }
-        return peak
-    }
-
-    private fun updateTOverR(ratio: Float) {
-        smoothedTOverR = if (smoothedTOverR == 0f) {
-            ratio
-        } else {
-            TR_EMA_ALPHA * ratio + (1f - TR_EMA_ALPHA) * smoothedTOverR
-        }
-        _tOverR.value = smoothedTOverR
-    }
 
     /**
      * Registers a confirmed R-peak and applies EMA smoothing to the BPM display.
@@ -465,9 +389,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Clears all detector state — called on lead reconnect and packet gaps. */
     private fun resetBeatDetector() {
-        pendingBeats.clear()
-        smoothedTOverR     = 0f
-        _tOverR.value      = null
         recentBeatTimestamps.clear()
         smoothedHeartRate  = 0f
     }
@@ -487,7 +408,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         recordingEventsBuffer.clear()
         recordingHrSamples.clear()
         monitor.reset()
-        _monitoringSnapshot.value = null
         recordingSampleIndex = 0
         recordedSampleCount  = 0
         flushedEventCount    = 0
@@ -641,7 +561,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         _visibleArrhythmiaEvents.value = emptyList()
         _lastClassificationResult.value = null
         _classificationResults.value   = null
-        _lastSignalQuality.value       = null
         _heartRate.value               = 0
         _droppedPacketCount.value      = 0
         resetBeatDetector()
@@ -676,19 +595,6 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
          * Rolling window for adaptive beat detection: 1 second of samples.
          * Threshold = windowMin + BEAT_THRESHOLD_FACTOR × peak-to-peak amplitude.
          */
-        /** Index of the R-peak inside a beat window (96 pre + 32 post). */
-        private const val BEAT_PRE_SAMPLES = 96
-
-        /** T-wave search window after the R-peak. */
-        private const val T_WINDOW_START_MS = 200L
-        private const val T_WINDOW_END_MS   = 420L
-
-        /** R amplitude below which T/R is too ill-conditioned to report. */
-        private const val MIN_R_AMPLITUDE = 20f
-
-        /** EMA alpha for the T/R display — slower than HR, it is a setup diagnostic. */
-        private const val TR_EMA_ALPHA = 0.15f
-
         /** Number of recent RR intervals averaged for heart-rate calculation. */
         private const val MAX_BEAT_HISTORY      = 10
 
