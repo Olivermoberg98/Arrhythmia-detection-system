@@ -78,7 +78,7 @@ MVVM, two layers deep (no domain/UseCase layer — ViewModels call repositories 
 
 ## TODO
 
-- **Verify the regulatory open-action fixes on a device** (OA-1..5 are implemented, status in `docs/regulatory/RMF-001_RiskManagementFile.md` §6): run `connectedAndroidTest` for the v5→v6 migration, and TC-REC-03..06 (force-kill / BLE loss / <10 s recording), TC-SYNC-05 (single-session cloud delete), TC-PRIV-01 (backup and device transfer exclude the database).
+- **Verify the regulatory open-action fixes on a device** (OA-1..5 are implemented, status in `docs/regulatory/RMF-001_RiskManagementFile.md` §6; the v5→v6 migration tests pass on a OnePlus 8T): TC-REC-03..06 (force-kill / BLE loss / <10 s recording), TC-SYNC-05 (single-session cloud delete), TC-PRIV-01 (backup and device transfer exclude the database).
 - **Add test coverage for the classifier** (incl. the ADC→mV conversion), which still has none. BLE parsing is now covered by `BleManagerParseTest`, so `parseStreamPacket` (`CyclomaticComplexMethod` + `LongMethod` in `app/detekt-baseline.xml`) can be simplified against it.
 
 ## Open questions
