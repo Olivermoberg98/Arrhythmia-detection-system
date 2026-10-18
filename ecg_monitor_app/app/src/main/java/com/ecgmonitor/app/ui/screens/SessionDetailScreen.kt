@@ -75,6 +75,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ecgmonitor.app.data.database.entities.AuditAction
 import com.ecgmonitor.app.data.database.entities.EcgSessionEntity
 import com.ecgmonitor.app.data.database.entities.HealthStatus
+import com.ecgmonitor.app.data.models.DataSource
 import com.ecgmonitor.app.data.models.ArrhythmiaEvent
 import com.ecgmonitor.app.ui.components.EcgChart
 import com.ecgmonitor.app.ui.theme.MedicalCardBackground
@@ -116,7 +117,6 @@ fun SessionDetailScreen(
     val eventFilter      by viewModel.eventFilter.collectAsStateWithLifecycle()
 
     var showSpeedMenu    by remember { mutableStateOf(false) }
-    var showFilterMenu   by remember { mutableStateOf(false) }
     var showExportMenu   by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var exportStatus     by remember { mutableStateOf<Pair<Boolean, String>?>(null) } // isSuccess to message
@@ -287,19 +287,11 @@ fun SessionDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 EventTimelineSection(
+                    session = data.session,
                     events = viewModel.getFilteredEvents(),
                     currentFilter = eventFilter,
-                    onFilterClick = { showFilterMenu = true },
                     onEventClick = { viewModel.jumpToEvent(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp),
-                    showFilterMenu = showFilterMenu,
-                    onFilterMenuDismiss = { showFilterMenu = false },
-                    onFilterSelect = { filter ->
-                        viewModel.setEventFilter(filter)
-                        showFilterMenu = false
-                    }
+                    onFilterSelect = { viewModel.setEventFilter(it) }
                 )
 
                 exportStatus?.let { (isSuccess, message) ->
@@ -511,17 +503,17 @@ private fun PlaybackControls(
 
 @Composable
 private fun EventTimelineSection(
+    session: EcgSessionEntity,
     events: List<ArrhythmiaEvent>,
     currentFilter: EventFilter,
-    onFilterClick: () -> Unit,
     onEventClick: (ArrhythmiaEvent) -> Unit,
-    modifier: Modifier = Modifier,
-    showFilterMenu: Boolean,
-    onFilterMenuDismiss: () -> Unit,
     onFilterSelect: (EventFilter) -> Unit
 ) {
+    var showFilterMenu by remember { mutableStateOf(false) }
+    // Live recordings persist only abnormal beats; normal ones exist only as a count.
+    val abnormalOnly = session.source == DataSource.ESP32_DEVICE
     Card(
-        modifier = modifier,
+        modifier = Modifier.fillMaxWidth().height(300.dp),
         colors = CardDefaults.cardColors(containerColor = MedicalCardBackground),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -532,23 +524,26 @@ private fun EventTimelineSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Event Timeline (${events.size})",
+                    if (abnormalOnly) "Abnormal Beats (${events.size})" else "Event Timeline (${events.size})",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = MedicalTextSecondary
                 )
 
                 Box {
-                    TextButton(onClick = onFilterClick) {
+                    TextButton(onClick = { showFilterMenu = true }) {
                         Text(getFilterName(currentFilter), fontSize = 12.sp, color = MedicalCyan)
                         Icon(Icons.Default.FilterList, contentDescription = null, modifier = Modifier.size(16.dp), tint = MedicalCyan)
                     }
 
-                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = onFilterMenuDismiss) {
+                    DropdownMenu(expanded = showFilterMenu, onDismissRequest = { showFilterMenu = false }) {
                         EventFilter.entries.forEach { filter ->
                             DropdownMenuItem(
                                 text = { Text(getFilterName(filter)) },
-                                onClick = { onFilterSelect(filter) },
+                                onClick = {
+                                    onFilterSelect(filter)
+                                    showFilterMenu = false
+                                },
                                 leadingIcon = {
                                     if (currentFilter == filter) Icon(Icons.Default.Check, contentDescription = null)
                                 }
@@ -556,6 +551,15 @@ private fun EventTimelineSection(
                         }
                     }
                 }
+            }
+
+            if (events.isEmpty()) {
+                Text(
+                    emptyTimelineMessage(session, currentFilter, abnormalOnly),
+                    fontSize = 13.sp,
+                    color = MedicalTextSecondary,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
 
             LazyColumn(
@@ -623,6 +627,23 @@ private fun formatTimestamp(timestamp: Long): String {
     val mins = (timestamp / 1000) / 60
     val secs = (timestamp / 1000) % 60
     return String.format(Locale.US, "%d:%02d", mins, secs)
+}
+
+private fun emptyTimelineMessage(
+    session: EcgSessionEntity,
+    filter: EventFilter,
+    abnormalOnly: Boolean
+): String {
+    val withheld = session.suppressedEvents ?: 0
+    return when {
+        filter != EventFilter.ALL -> "No events match this filter."
+        !abnormalOnly || session.totalBeats == 0 -> "No beats were classified in this session."
+        else -> buildString {
+            append("${session.normalBeats} of ${session.totalBeats} classified beats were Normal. ")
+            append("Only abnormal beats are listed here.")
+            if (withheld > 0) append(" $withheld beats were withheld due to poor signal quality.")
+        }
+    }
 }
 
 private fun getFilterName(filter: EventFilter): String = when (filter) {
