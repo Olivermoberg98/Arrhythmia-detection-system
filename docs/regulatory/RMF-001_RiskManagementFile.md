@@ -3,8 +3,8 @@
 ### ISO 14971:2019 Compliant
 
 **Document ID:** RMF-001  
-**Version:** 1.1  
-**Date:** 2026-10-16  
+**Version:** 1.2  
+**Date:** 2026-10-21  
 **Status:** DRAFT — Requires clinical review before submission  
 
 > **Regulatory status:** Educational project. This file follows the structure of ISO 14971 as a design discipline. The system is **not a certified medical device**, has not been assessed by a Notified Body, and must not be used for clinical purposes.
@@ -139,10 +139,10 @@
 | **Severity** | 3 |
 | **Probability (pre-mitigation)** | 3 (local storage without encryption; cloud copy of metadata) |
 | **Pre-mitigation Risk** | Medium |
-| **Mitigations** | M1: Raw waveforms stored locally only; only session metadata and events are uploaded to Firestore over TLS under an anonymous per-user UID (FR-SYNC-01/02) [Implemented — confirmed by code inspection, no test]; M2: Android app sandboxing restricts access to app data [Implemented]; M3: Consent screen documents what is stored [**Non-conformance** — the consent text says data is never transmitted, see OA-1]; M4: Deletion capability ensures GDPR right to erasure [Partial — "Delete All" and withdrawal also delete cloud data; single-session delete leaves the cloud copy, OA-2]; M5: SQLCipher database encryption [Not implemented]; M6: Android backup disabled (`allowBackup="false"`) [Implemented; device-to-device transfer not excluded, OA-5]; M7: Firestore security rules reviewed, EU region confirmed, Data Processing Agreement [Not evidenced — see DPIA-001] |
-| **Probability (post-mitigation)** | 3 |
+| **Mitigations** | M1: Raw waveforms stored locally only; only session metadata and events are uploaded to Firestore over TLS under an anonymous per-user UID (FR-SYNC-01/02) [Implemented — confirmed by code inspection, no test]; M2: Android app sandboxing restricts access to app data [Implemented]; M3: Consent screen documents what is stored, including the Firestore upload; `CONSENT_VERSION` 3.0 re-prompts existing users (FR-CON-08) [Implemented (OA-1) — TC-CON-08 not run]; M4: Deletion capability ensures GDPR right to erasure — "Delete All", withdrawal and single-session delete all remove the cloud copy (FR-SYNC-05) [Implemented (OA-2) — TC-SYNC-05 not run]; M5: SQLCipher database encryption [Not implemented]; M6: Android cloud backup and device-to-device transfer excluded (`allowBackup="false"`, `data_extraction_rules.xml`) (NFR-08) [Implemented (OA-5) — TC-PRIV-01 not run]; M7: Firestore security rules reviewed, EU region confirmed, Data Processing Agreement [Not evidenced — see DPIA-001] |
+| **Probability (post-mitigation)** | 3 (not lowered until M3, M4 and M6 are verified) |
 | **Residual Risk** | Medium |
-| **Acceptable?** | No — open actions OA-1, OA-2, OA-5 and the DPIA-001 §7 items must be closed |
+| **Acceptable?** | No — M3, M4 and M6 await verification, and the DPIA-001 §7 items must be closed |
 
 ---
 
@@ -155,10 +155,10 @@
 | **Severity** | 3 |
 | **Probability (pre-mitigation)** | 3 |
 | **Pre-mitigation Risk** | Medium |
-| **Mitigations** | M1: Incremental write to database [Not implemented — the recording is buffered in memory and written once on Stop, so a crash loses the whole recording]; M2: Session marked as "incomplete" if app terminates unexpectedly [Not implemented]; M3: Incomplete sessions displayed with warning indicator in History [Not implemented]. See OA-3 |
-| **Probability (post-mitigation)** | 3 |
+| **Mitigations** | M1: Incremental write to database every 5 s through a single serial writer (FR-REC-03) [Implemented (OA-3) — TC-REC-03 not run]; M2: Session marked `isComplete = false` until Stop, so a crash or BLE loss leaves it flagged (DB v6, FR-REC-04) [Implemented (OA-3) — migration verified by TC-DB-01, behaviour TC-REC-04/05 not run]; M3: Incomplete sessions displayed with warning indicator in History and Session Detail (FR-REC-05) [Implemented (OA-3) — not run]; M4: Recordings under 10 s discarded (FR-REC-06) [Implemented (OA-3) — TC-REC-06 not run] |
+| **Probability (post-mitigation)** | 3 (not lowered until TC-REC-03..06 pass) |
 | **Residual Risk** | Medium |
-| **Acceptable?** | No — open action OA-3 |
+| **Acceptable?** | Not yet — mitigations implemented, awaiting on-device verification (TC-REC-03..06) |
 
 ---
 
@@ -171,10 +171,10 @@
 | **Severity** | 4 |
 | **Probability (pre-mitigation)** | 3 |
 | **Pre-mitigation Risk** | Medium |
-| **Mitigations** | M1: Persistent disclaimer in Session Detail screen [Not implemented — FR-ARR-10, OA-4]; M2: Consent screen explicitly states app is not a diagnostic tool [Implemented]; M3: UI language avoids clinical terms ("health indicator" not "diagnosis"); the misleading "AFib" label was renamed to "SVEB" (`9d18d21`) [Implemented — TC-ARR-07 not run]; M4: IEC 62366 usability testing to validate comprehension [Not implemented] |
-| **Probability (post-mitigation)** | 3 |
+| **Mitigations** | M1: Persistent "not a medical device" notice on the Live Monitor and Session Detail screens (FR-ARR-10) [Implemented (OA-4) — TC-ARR-12 not run]; M2: Consent screen explicitly states app is not a diagnostic tool [Implemented]; M3: UI language avoids clinical terms ("health indicator" not "diagnosis"); the misleading "AFib" label was renamed to "SVEB" (`9d18d21`) [Implemented — TC-ARR-07 not run]; M4: IEC 62366 usability testing to validate comprehension [Not implemented] |
+| **Probability (post-mitigation)** | 3 (not lowered until TC-ARR-12 passes; comprehension also needs M4) |
 | **Residual Risk** | Medium |
-| **Acceptable?** | No — open action OA-4 |
+| **Acceptable?** | Not yet — M1 implemented, awaiting verification (TC-ARR-12); M4 not implemented |
 
 ---
 
@@ -283,7 +283,7 @@
 | **Severity** | 3 |
 | **Probability (pre-mitigation)** | 3 |
 | **Pre-mitigation Risk** | Medium |
-| **Mitigations** | M1: Cross-project contract table and change procedure (CLAUDE.md) [Implemented]; M2: Live and per-session drift score against the training value (FR-SQ-03/04); it exposed the units bug on its first real run [Implemented — TC-SQ-02 partial]; M3: Training reproduces the firmware chain; firmware vs training parity on MIT-BIH (TC-PAR-01) and on the ESP32-S3 (TC-HIL-01) [Implemented]; M4: Native unit tests for window and RR features (TC-FW-01..06) [Implemented]; M5: ADC→mV conversion before normalising (FR-ARR-07) [Implemented — conversion factor depends on board gain, measured ≈1000–1090 vs 1100 assumed, TC-HW-01]; M6: Model and metadata shipped as a pair (FR-ARR-08) [Partial — the stored model version "1.0.0" does not identify the model, OA-6]. **Residual:** no automated cross-component check; no CI |
+| **Mitigations** | M1: Cross-project contract table and change procedure (CLAUDE.md) [Implemented]; M2: Live and per-session drift score against the training value (FR-SQ-03/04); it exposed the units bug on its first real run [Implemented — TC-SQ-02 partial]; M3: Training reproduces the firmware chain; firmware vs training parity on MIT-BIH (TC-PAR-01) and on the ESP32-S3 (TC-HIL-01) [Implemented]; M4: Native unit tests for window and RR features (TC-FW-01..06) [Implemented]; M5: ADC→mV conversion before normalising (FR-ARR-07) [Implemented — conversion factor depends on board gain, measured ≈1000–1090 vs 1100 assumed, TC-HW-01]; M6: Model and metadata shipped as a pair, sessions store the training-run id as `modelVersion` (FR-ARR-08) [Implemented (OA-6) — TC-ARR-10 not run]; M7: CI on every push and pull request (TC-CI-01) fails if the app's model or metadata differ from the pipeline output, or if the metadata's sample rate, beat window or class count disagree with `config.h` [Implemented]. **Residual:** filter coefficients, the RR-feature definition, the fiducial and the ADC→mV factor are still kept in sync by hand |
 | **Probability (post-mitigation)** | 2 |
 | **Residual Risk** | Low |
 | **Acceptable?** | Yes |
@@ -314,9 +314,9 @@
 | RISK-002 | False positive alarm | Low | Low | ✅ |
 | RISK-003 | Signal quality / noise | Medium | Medium | ⚠️ ALARP |
 | RISK-004 | Electrical safety | Medium | Medium | ❌ (supervised bench use with battery/isolated host only) |
-| RISK-005 | Data breach | Medium | Medium | ❌ (OA-1, OA-2, OA-5, DPIA §7) |
-| RISK-006 | Software crash | Medium | Medium | ❌ (OA-3) |
-| RISK-007 | User misinterpretation | Medium | Medium | ❌ (OA-4) |
+| RISK-005 | Data breach | Medium | Medium | ❌ (OA-1, OA-2, OA-5 awaiting verification; DPIA §7 open) |
+| RISK-006 | Software crash | Medium | Medium | ⏳ (OA-3 implemented, awaiting verification) |
+| RISK-007 | User misinterpretation | Medium | Medium | ⏳ (OA-4 implemented, awaiting verification; no usability testing) |
 | RISK-008 | BLE disconnection | Medium | Low | ✅ |
 | RISK-009 | ADC saturation / clipping | Medium | Medium | ⚠️ ALARP |
 | RISK-010 | R-peak detector errors | Medium | Medium | ⚠️ ALARP |
@@ -326,7 +326,7 @@
 | RISK-014 | Contract mismatch / drift | Medium | Low | ✅ |
 | RISK-015 | Result latency | Low | Low | ✅ |
 
-**Overall residual risk: Not acceptable for any use beyond the educational intended use.** Within it, use is acceptable only on a battery-powered or USB-isolated host (RISK-004), and only once the open actions in §6 for RISK-005, RISK-006 and RISK-007 are closed.
+**Overall residual risk: Not acceptable for any use beyond the educational intended use.** Within it, use is acceptable only on a battery-powered or USB-isolated host (RISK-004), and only once the fixes for open actions OA-1..5 (§6) have been verified on a device and the DPIA-001 §7 items for RISK-005 are closed.
 
 ---
 
@@ -337,20 +337,22 @@
 | ML algorithm performance on MIT-BIH DS2 | End-to-end evaluation through the real firmware code (TC-ML-01) | ✅ Done — macro-F1 0.772, SVEB F1 0.46 |
 | ML algorithm false negative rate on clinical data | Performance study vs clinical dataset | ⏳ Pending |
 | Firmware vs training signal-chain parity | Host build of the real SignalProcessor on MIT-BIH (TC-PAR-01); on-device run (TC-HIL-01) | ✅ Done (TC-HIL-01 on an earlier firmware build) |
-| Firmware beat window / RR features / fiducial | Native unit tests (TC-FW-01..06) | ✅ 6/6 pass (2026-10-16) |
+| Firmware beat window / RR features / fiducial | Native unit tests (TC-FW-01..06) | ✅ 6/6 pass, run by CI on every push (2026-10-21) |
 | Settling hold-back, lead-off debounce | Replay / simulation (TC-FW-07, TC-FW-08) | ✅ Development evidence only, not a committed test |
-| Signal quality gate | Unit tests (TC-SQ-01) | ✅ 10/10 pass (2026-10-16) |
+| Signal quality gate | Unit tests (TC-SQ-01) | ✅ 10/10 pass, run by CI (2026-10-21) |
+| Model artifact and contract consistency | CI artifact-identity and metadata ↔ `config.h` check (TC-CI-01) | ✅ Pass (2026-10-21) |
+| Database migrations v3→v6 | Instrumented `MigrationTestHelper` tests (TC-DB-01) | ✅ 9/9 pass on a OnePlus 8T (2026-10-18) |
 | Board gain / ADC→mV factor | Injected known signal (TC-HW-01) | ✅ Done — ≈1000–1090 |
 | Electrode placement on a real wearer | Recording review (TC-WEAR-01) | ✅ One wearer |
 | IEC 60601-1 leakage current | Accredited lab testing | ⏳ Pending — not planned for this educational project |
 | Usability testing (IEC 62366) | Formative + summative testing | ⏳ Pending |
-| Incomplete session handling | Software testing | ❌ Not implemented (OA-3) |
+| Incomplete session handling | Force-kill / BLE-loss / short-recording tests (TC-REC-03..06) | ⏳ Implemented (OA-3), not yet run |
 
 ---
 
 ## 6. Open Actions
 
-Defects found during the v1.1 review (code inspection, 2026-10-16). They affect implemented software and need code changes, which are outside this document update.
+Defects found during the v1.1 review (code inspection, 2026-10-16). OA-1..6 were fixed in code on 2026-10-18 (`746cd5a`); an action is closed only when its listed test case has passed.
 
 | ID | Finding | Affects | Requirement | Status |
 |----|---------|---------|-------------|--------|
@@ -370,5 +372,6 @@ Defects found during the v1.1 review (code inspection, 2026-10-16). They affect 
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft |
 | 1.1 | 2026-10-16 | Oliver Moberg | Educational status stated; scope updated (ESP32-S3 + AD8232 board, on-phone inference, Firestore). RISK-001..008 re-evaluated against the implementation, with mitigation status and evidence; residuals raised where mitigations are not implemented. RISK-004 rewritten for the USB-powered, unisolated device. Added RISK-009..015, §6 open actions OA-1..7; summary and verification tables updated |
+| 1.2 | 2026-10-21 | Oliver Moberg | RISK-005/006/007/014 mitigations updated for the OA-1..6 fixes (implemented, awaiting verification; residual probabilities deliberately not lowered). RISK-014 M7 added: CI artifact and contract check. §5 adds CI evidence and TC-DB-01 (9/9 on device). Summary table and overall statement updated |
 
 *This document must be reviewed by a qualified clinical/regulatory professional before submission to a Notified Body.*

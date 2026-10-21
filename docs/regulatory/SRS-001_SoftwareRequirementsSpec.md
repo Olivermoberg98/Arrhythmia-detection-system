@@ -3,8 +3,8 @@
 ### IEC 62304:2015 Compliant
 
 **Document ID:** SRS-001  
-**Version:** 1.1  
-**Date:** 2026-10-16  
+**Version:** 1.2  
+**Date:** 2026-10-21  
 **Software Safety Class:** Class B (harm possible but not life-threatening if mitigations in place) — applied as a design discipline, not a claimed classification  
 **Status:** DRAFT  
 
@@ -190,7 +190,7 @@ These requirements specify the device behaviour that the app and the trained mod
 | FR-BLE | RISK-008 | TC-BLE-01 to TC-BLE-05 |
 | FR-ECG | RISK-003, RISK-010, RISK-011, RISK-012, RISK-014 | TC-ECG-01 to TC-ECG-06 |
 | FR-REC | RISK-001, RISK-006 | TC-REC-01 to TC-REC-06 |
-| FR-ARR | RISK-001, RISK-002, RISK-007, RISK-009, RISK-014, RISK-015 | TC-ARR-01 to TC-ARR-12, TC-ML-01, TC-HW-01, TC-WEAR-01 |
+| FR-ARR | RISK-001, RISK-002, RISK-007, RISK-009, RISK-014, RISK-015 | TC-ARR-01 to TC-ARR-12, TC-ML-01, TC-HW-01, TC-WEAR-01, TC-CI-01 |
 | NFR | RISK-005, RISK-006, RISK-007 | TC-PERF-01 to TC-PERF-03, TC-PRIV-01, TC-SYNC-01 |
 | FR-CON, FR-AUD, FR-DEL | RISK-005 | TC-CON-01 to TC-CON-08, TC-AUD-01 to TC-AUD-06, TC-DEL-01 to TC-DEL-04 |
 | FR-FW | RISK-003, RISK-008, RISK-010, RISK-012, RISK-014, RISK-015 | TC-FW-01 to TC-FW-10, TC-PAR-01, TC-HIL-01, TC-DET-01 |
@@ -207,5 +207,6 @@ These requirements specify the device behaviour that the app and the trained mod
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft |
 | 1.1 | 2026-10-16 | Oliver Moberg | Educational status stated. Intended use and system context updated (ESP32-S3 + AD8232, on-phone inference, Firebase). FR-ECG-03/05, FR-ARR-01/04, NFR-02 revised (250 Hz, 3 classes N/S/V, SVEB-graded health status, metadata-only sync). Added FR-ECG-06, FR-ARR-06..10, FR-CON-08, §3.9 FR-FW-01..09, §3.10 FR-SYNC-01..05, §3.11 FR-SQ-01..05, NFR-08. Constraints updated (lead II, ADC headroom, electrical safety) |
+| 1.2 | 2026-10-21 | Oliver Moberg | Traceability: TC-CI-01 added for FR-ARR (FR-ARR-08). Requirements unchanged |
 
 *This document must be reviewed by a qualified regulatory professional before Notified Body submission.*

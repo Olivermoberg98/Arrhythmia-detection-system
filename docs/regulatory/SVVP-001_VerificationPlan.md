@@ -3,8 +3,8 @@
 ### IEC 62304:2015 §5.6 / §5.7
 
 **Document ID:** SVVP-001  
-**Version:** 1.1  
-**Date:** 2026-10-16  
+**Version:** 1.2  
+**Date:** 2026-10-21  
 **Status:** DRAFT  
 
 > **Regulatory status:** Educational project. This plan follows the structure of IEC 62304 as a design discipline. The system is **not a certified medical device** and has not been assessed by a Notified Body.
@@ -32,6 +32,7 @@ This document defines how each requirement in SRS-001 is verified. Every Must-pr
 | Hardware-in-the-loop | Firmware on the ESP32-S3, output compared with the host build | Manual |
 | Bench / human wearer | Injected test signal; recording on a real wearer | Manual |
 | Manual (app) | Protocol below | Tester executes on real device |
+| Continuous integration | GitHub Actions: firmware native tests + build, app unit tests + detekt + build, model-artifact and contract check | `.github/workflows/ci.yml` |
 
 **Development evidence:** some results below come from one-off replays or simulations run during development and recorded in a commit message. They are cited with the commit hash and marked as development evidence: they are real measurements but not a committed, repeatable test.
 
@@ -123,7 +124,8 @@ This document defines how each requirement in SRS-001 is verified. Every Must-pr
 | TC-SQ-03 | FR-SQ-04, FR-SQ-02 | Unit | `ClassificationMonitorTest`: confidence, low-confidence rate, entropy, poor-signal rate, suppressed events, inference timing, rate flags | All scalars and rate verdicts correct |
 | TC-SQ-04 | FR-SQ-02 | Integration | Feed an abnormal classification on an unusable beat through `LiveMonitorViewModel` | No event created; suppressed count incremented |
 | TC-SQ-05 | FR-SQ-05 | Manual | Detach an electrode; then record with correct and with wrong placement | Lead-off shown; T/R green for correct lead II, not green for the wrong lead |
-| TC-DB-01 | FR-SQ-04 | Instrumented | `EcgDatabaseMigrationTest` (7 cases, v3→v4→v5) | Migrated schemas match the entities; data carried across |
+| TC-DB-01 | FR-SQ-04, FR-REC-04 | Instrumented | `EcgDatabaseMigrationTest` (9 cases, v3→v4→v5→v6) | Migrated schemas match the entities; data carried across; existing sessions marked complete by v5→v6 |
+| TC-CI-01 | FR-ARR-08 | Automated (CI) | `ml-contracts` job in `.github/workflows/ci.yml`: app `assets/` model and metadata vs `ml_pipeline/src/ml/`; metadata sample rate, beat window and class count vs `config.h` | Files byte-identical; all three values agree |
 
 ### Consent and Data Governance
 
@@ -183,10 +185,14 @@ This document defines how each requirement in SRS-001 is verified. Every Must-pr
 
 ## 5. Regression Test Suite
 
-There is no CI; tests run locally. Before merging to `main`, run:
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request, and a pull request is merged only when it passes:
 
-- `pio test -e native` (TC-FW-01..06) — from `arrhythmia_system_controller/`
-- `.\gradlew.bat test` (TC-SQ-01..03) and `.\gradlew.bat detekt` — from `ecg_monitor_app/`
+- `pio test -e native` (TC-FW-01..06) and the `esp32s3cam` firmware build
+- `./gradlew test` (TC-SQ-01..03, TC-FW-09 parser tests), `detekt` and `assembleDebug`
+- Model artifact and contract consistency (TC-CI-01)
+
+Run locally, because they need a device or developer scripts:
+
 - `.\gradlew.bat connectedAndroidTest` (TC-DB-01) when a device or emulator is available
 - After any change to a cross-project contract or the model: TC-PAR-01 and TC-ML-01
 
@@ -209,14 +215,16 @@ Once implemented as automated tests, add: TC-CON-01, TC-CON-03, TC-CON-07 (conse
 
 ## 7. Verification Results to Date
 
-Status as of 2026-10-16. **Pass** = run and passed; **Pass (dev)** = development evidence (§2); **Not run** = test defined but not executed; **Fails / not implemented** = the requirement is known not to be met.
+Status as of 2026-10-21. **Pass** = run and passed; **Pass (dev)** = development evidence (§2); **Not run** = test defined but not executed; **Fails / not implemented** = the requirement is known not to be met. "CI" = passed in the GitHub Actions run on PR #9 (2026-10-21) and on every run since.
 
 | Test ID | Result | Evidence |
 |---------|--------|----------|
-| TC-FW-01..06 | Pass | `pio test -e native`, 2026-10-16: 6/6 passed (also in `752dd11`, `c4ef8c5`) |
-| TC-SQ-01, TC-SQ-02 | Pass | `.\gradlew.bat test`, 2026-10-16: `SignalQualityAnalyzerTest` 10/10 passed |
-| TC-SQ-03 | Pass | `.\gradlew.bat test`, 2026-10-16: `ClassificationMonitorTest` 15/15 passed |
-| detekt | Pass | `.\gradlew.bat detekt`, 2026-10-16: no new findings |
+| TC-FW-01..06 | Pass | CI and local `pio test -e native`, 2026-10-21: 6/6 passed (also in `752dd11`, `c4ef8c5`) |
+| TC-FW-09 | Pass (app parser) | CI, `BleManagerParseTest` 8/8: `DataPacket` 26 B and `BeatPacket` 275 B decode correctly, malformed packets dropped. Firmware side by inspection of `config.h` |
+| TC-SQ-01, TC-SQ-02 | Pass | CI, 2026-10-21: `SignalQualityAnalyzerTest` 10/10 passed |
+| TC-SQ-03 | Pass | CI, 2026-10-21: `ClassificationMonitorTest` 15/15 passed |
+| TC-CI-01 | Pass | CI, 2026-10-21: assets identical; sample rate, beat window and class count agree with `config.h` |
+| detekt | Pass | CI, 2026-10-21: no new findings |
 | TC-PAR-01 | Pass | `c4ef8c5`: same fiducial sample for 92–100% of beats per record, within one sample for 99%; `a789e2f`: firmware chain reproduced in training. CLAUDE.md: windows match to ≈1 µV where the ADC does not clip; R-peaks on the same sample for >99% of beats |
 | TC-HIL-01 | Pass (earlier firmware) | `a789e2f`: on-device output matches the host bit-for-bit in R-peaks and RR features |
 | TC-ML-01 | Done (no threshold) | `c4ef8c5`: `model_ensemble_20261015_212815`, DS2 end-to-end macro-F1 0.772 (training path 0.780); SVEB F1 0.46 |
@@ -225,11 +233,10 @@ Status as of 2026-10-16. **Pass** = run and passed; **Pass (dev)** = development
 | TC-FW-07 | Pass (dev) | `e1f0c17`: 24/24 and 62/62 beats with dropouts injected (old policy: 0 and 5) |
 | TC-FW-08 | Pass (dev) | `0fdd577`: beats sent from the transient 110 → 0, false beats 8 → 0, detection afterwards unchanged |
 | TC-DET-01 | Pass (dev, earlier firmware) | `30b3a84`: 24/24, 31/32, 62/63 beats vs reference on three recorded sessions; before the centroid fiducial |
-| TC-DB-01 | Not run | Instrumented tests not executed; migration SQL checked by hand against the v4 schema (`9d18d21`) |
-| TC-CON-08 | Fails | Consent text states data is not transmitted (RMF-001 OA-1) |
-| TC-AUD-06 | Fails | Session deletion and export not logged (OA-2) |
-| TC-ARR-10 | Fails | Stored model version "1.0.0" does not identify the model (OA-6) |
-| TC-REC-03..06, TC-ECG-06, TC-ARR-12, TC-SYNC-05 | Not implemented | OA-3; FR-ECG-06 open; notice on the consent screen only (OA-4); single-session delete is local only (OA-2) |
+| TC-DB-01 | Pass | `connectedAndroidTest` on a OnePlus 8T, 2026-10-18: `EcgDatabaseMigrationTest` 9/9 passed (v3→v6) |
+| TC-ARR-10 | Partial | Assets identical to `ml_pipeline/src/ml/` (TC-CI-01); metadata version is the run id `ensemble_20261015_212815` (OA-6). Stored session `modelVersion` not yet checked on a device |
+| TC-CON-08, TC-AUD-06, TC-SYNC-05, TC-REC-03..06, TC-ARR-12, TC-PRIV-01 | Not run (implemented) | Fixes for RMF-001 OA-1..5 implemented 2026-10-18 (`746cd5a`) and confirmed by code inspection 2026-10-21; on-device tests still to be executed |
+| TC-ECG-06 | Not implemented | Recording guidance before a session (FR-ECG-06) is open |
 | All other test cases | Not run | — |
 
 ---
@@ -240,3 +247,4 @@ Status as of 2026-10-16. **Pass** = run and passed; **Pass (dev)** = development
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft |
 | 1.1 | 2026-10-16 | Oliver Moberg | Educational status stated. Scope extended to firmware. Test levels added (firmware native, offline, HIL, bench, wearer, detekt). TC-ECG-03/05, TC-ARR-01/02/04/05/06 updated (250 Hz, 3 classes, SVEB thresholds). Added TC-ECG-06, TC-ARR-08..12, TC-FW-01..10, TC-PAR-01, TC-HIL-01, TC-DET-01, TC-ML-01, TC-HW-01, TC-WEAR-01, TC-SQ-01..05, TC-DB-01, TC-CON-08, TC-AUD-06, TC-SYNC-01..05, TC-PRIV-01. Regression suite reflects local runs (no CI). Added §7 verification results |
+| 1.2 | 2026-10-21 | Oliver Moberg | CI added as a test level and as the regression suite (§5). Added TC-CI-01. TC-DB-01 extended to v6 (9 cases) and recorded as passed on a device. §7: CI evidence; TC-FW-09 app parser passed; TC-ARR-10 partial; OA-1..5 test cases moved from Fails / Not implemented to Not run (implemented) |

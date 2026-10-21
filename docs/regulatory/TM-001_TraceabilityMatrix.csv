@@ -12,10 +12,10 @@ FR-ECG-05,Sampling rate 250 Hz,Must,RISK-014,ui/viewmodels/LiveMonitorViewModel.
 FR-ECG-06,Electrode placement guidance for the supplied cable,Should,RISK-011 RISK-012,—,TC-ECG-06,Not implemented,Not run
 FR-REC-01,Start and stop recording,Must,,ui/screens/LiveMonitorScreen.kt | ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-01,Implemented,Not yet verified
 FR-REC-02,Recording only available when BLE connected,Must,,ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-02,Implemented,Not yet verified
-FR-REC-03,Write recording data incrementally,Must,RISK-006,ui/viewmodels/LiveMonitorViewModel.kt | data/repository/EcgRepository.kt,TC-REC-03,Not implemented (buffered in memory until Stop),Not run
-FR-REC-04,Mark interrupted sessions as incomplete,Must,RISK-006,data/database/entities/Entities.kt | data/repository/EcgRepository.kt,TC-REC-04,Not implemented,Not run
-FR-REC-05,Inform user of incomplete recording,Must,RISK-006,ui/screens/HistoryScreen.kt | ui/screens/SessionDetailScreen.kt,TC-REC-05,Not implemented,Not run
-FR-REC-06,Minimum recording length 10 seconds,Should,RISK-001,ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-06,Not implemented,Not run
+FR-REC-03,Write recording data incrementally,Must,RISK-006,ui/viewmodels/LiveMonitorViewModel.kt | data/repository/EcgRepository.kt (saveRecordingChunk),TC-REC-03,Implemented (written every 5 s),Not run
+FR-REC-04,Mark interrupted sessions as incomplete,Must,RISK-006,data/database/entities/Entities.kt (isComplete) | data/database/EcgDatabase.kt (MIGRATION_5_6) | ui/viewmodels/LiveMonitorViewModel.kt,TC-REC-04 TC-DB-01,Implemented,Partially verified (migration tested on device; behaviour not run)
+FR-REC-05,Inform user of incomplete recording,Must,RISK-006,ui/screens/HistoryScreen.kt | ui/screens/SessionDetailScreen.kt,TC-REC-05,Implemented,Not run
+FR-REC-06,Minimum recording length 10 seconds,Should,RISK-001,ui/viewmodels/LiveMonitorViewModel.kt (MIN_RECORDING_SECONDS),TC-REC-06,Implemented,Not run
 FR-ARR-01,Classify beats as Normal/Supraventricular/Ventricular (no AFib claim),Must,RISK-001 RISK-002,data/ml/ArrhythmiaClassifier.kt | ui/viewmodels/LiveMonitorViewModel.kt,TC-ARR-01 TC-ARR-02 TC-ML-01 TC-WEAR-01,Implemented,Partially verified (MIT-BIH offline + one wearer)
 FR-ARR-02,Store confidence score with each event,Must,RISK-001,data/database/entities/Entities.kt,TC-ARR-03,Implemented,Not yet verified
 FR-ARR-03,Determine health status Normal/Attention/Concerning,Must,RISK-001 RISK-007,data/repository/EcgRepository.kt,TC-ARR-04 TC-ARR-05 TC-ARR-06,Implemented,Not yet verified
@@ -23,9 +23,9 @@ FR-ARR-04,Health status thresholds (PVC and SVEB graded by percentage),Must,RISK
 FR-ARR-05,No clinical language in health status UI,Must,RISK-007,ui/screens/SessionDetailScreen.kt | ui/screens/HistoryScreen.kt,TC-ARR-07,Implemented,Not yet verified
 FR-ARR-06,Decision rule argmax(scores / thresholds),Must,RISK-001 RISK-002 RISK-014,data/ml/ArrhythmiaClassifier.kt,TC-ARR-08,Implemented,Not yet verified
 FR-ARR-07,Convert ADC counts to mV before normalising,Must,RISK-009 RISK-014,data/ml/ArrhythmiaClassifier.kt,TC-ARR-09 TC-HW-01 TC-SQ-02,Implemented,Partially verified (gain measured; conversion tested in SignalQualityAnalyzer only)
-FR-ARR-08,Model and metadata shipped as a pair; model version stored per session,Must,RISK-014,assets/arrhythmia_model.tflite | assets/model_metadata.json | data/ml/ClassificationMonitor.kt,TC-ARR-10,Partial (version does not identify the model),Non-conformance (OA-6)
+FR-ARR-08,Model and metadata shipped as a pair; model version stored per session,Must,RISK-014,assets/arrhythmia_model.tflite | assets/model_metadata.json | data/ml/ClassificationMonitor.kt | ml_pipeline/extract_constants.py | .github/workflows/ci.yml,TC-ARR-10 TC-CI-01,Implemented,Partially verified (assets checked by CI; stored modelVersion not run)
 FR-ARR-09,Event time from beat timestamp not arrival time,Must,RISK-015,ui/viewmodels/LiveMonitorViewModel.kt,TC-ARR-11,Implemented,Not yet verified
-FR-ARR-10,Not-a-medical-device notice on Live Monitor and Session Detail,Must,RISK-007,—,TC-ARR-12,Not implemented,Not run
+FR-ARR-10,Not-a-medical-device notice on Live Monitor and Session Detail,Must,RISK-007,ui/screens/LiveMonitorScreen.kt | ui/screens/SessionDetailScreen.kt,TC-ARR-12,Implemented,Not run
 FR-HIS-01,List all sessions with summary stats,Must,,ui/screens/HistoryScreen.kt | ui/viewmodels/HistoryViewModel.kt,—,Implemented,Not yet verified
 FR-HIS-02,Sort sessions by date/duration/arrhythmia count,Must,,ui/screens/HistoryScreen.kt,—,Implemented,Not yet verified
 FR-HIS-03,Session detail with waveform playback,Must,,ui/screens/SessionDetailScreen.kt | ui/viewmodels/SessionDetailViewModel.kt,—,Implemented,Not yet verified
@@ -37,8 +37,8 @@ FR-CON-04,Re-prompt if consent version changes,Must,RISK-005,data/consent/Consen
 FR-CON-05,Withdraw consent from Settings,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-CON-05,Implemented,Not yet verified
 FR-CON-06,Withdrawal triggers data deletion,Must,RISK-005,ui/screens/SettingsScreen.kt | data/firebase/SyncManager.kt | data/consent/ConsentManager.kt,TC-CON-06,Implemented,Not yet verified
 FR-CON-07,Consent records never deleted,Must,RISK-005,data/consent/ConsentManager.kt,TC-CON-07,Implemented,Not yet verified
-FR-CON-08,Consent text describes all data transmission incl. cloud sync,Must,RISK-005,ui/screens/ConsentScreen.kt | data/consent/ConsentManager.kt (CONSENT_VERSION),TC-CON-08,Not implemented (text says nothing is transmitted),Non-conformance (OA-1)
-FR-AUD-01,Log all specified actions to audit_log,Must,RISK-005,data/consent/ConsentManager.kt | navigation/NavigationHost.kt | data/firebase/SyncManager.kt,TC-AUD-01 TC-AUD-02 TC-AUD-03 TC-AUD-06,Partial (session delete and export not logged),Non-conformance (OA-2)
+FR-CON-08,Consent text describes all data transmission incl. cloud sync,Must,RISK-005,ui/screens/ConsentScreen.kt | data/consent/ConsentManager.kt (CONSENT_VERSION 3.0),TC-CON-08,Implemented,Not run
+FR-AUD-01,Log all specified actions to audit_log,Must,RISK-005,data/consent/ConsentManager.kt | navigation/NavigationHost.kt | data/firebase/SyncManager.kt | ui/screens/SessionDetailScreen.kt,TC-AUD-01 TC-AUD-02 TC-AUD-03 TC-AUD-06,Implemented,Not run
 FR-AUD-02,Audit entries include timestamp/action/sessionId,Must,RISK-005,data/database/entities/ConsentAndAuditEntities.kt,TC-AUD-04,Implemented,Not yet verified
 FR-AUD-03,Audit log retained until explicit user deletion,Must,RISK-005,data/consent/ConsentManager.kt,TC-AUD-05,Implemented,Not yet verified
 FR-DEL-01,Delete All Recordings button in Settings,Must,RISK-005,ui/screens/SettingsScreen.kt,TC-DEL-01,Implemented,Not yet verified
@@ -53,16 +53,16 @@ FR-FW-05,128-sample beat window (96 pre / 32 post),Must,RISK-014,arrhythmia_syst
 FR-FW-06,3 RR features with real post_rr and 8-interval mean; beat sent at next R-peak,Must,RISK-014 RISK-015,arrhythmia_system_controller/src/signal_processing/SignalProcessor.cpp | ml_pipeline/scripts/preprocess.py,TC-FW-01 TC-FW-04 TC-FW-05 TC-FW-06 TC-PAR-01 TC-HIL-01,Implemented,Verified
 FR-FW-07,Lead-off debounced over 250 ms,Must,RISK-003 RISK-010,arrhythmia_system_controller/src/main.cpp | arrhythmia_system_controller/src/config.h,TC-FW-07,Implemented,Partially verified (development evidence)
 FR-FW-08,No beats sent for 2 s after power-up or leads-on,Must,RISK-012,arrhythmia_system_controller/src/main.cpp | arrhythmia_system_controller/src/config.h,TC-FW-08,Implemented,Partially verified (development evidence)
-FR-FW-09,BLE GATT service and DataPacket/BeatPacket layout,Must,RISK-008 RISK-014,arrhythmia_system_controller/src/config.h | arrhythmia_system_controller/src/ble/BLEManager.cpp | data/ble/BleManager.kt,TC-FW-09,Implemented,Not yet verified
+FR-FW-09,BLE GATT service and DataPacket/BeatPacket layout,Must,RISK-008 RISK-014,arrhythmia_system_controller/src/config.h | arrhythmia_system_controller/src/ble/BLEManager.cpp | data/ble/BleManager.kt,TC-FW-09,Implemented,Partially verified (app parser tested in CI; firmware side by inspection)
 FR-SYNC-01,Upload session metadata and events only; no raw readings,Must,RISK-005,data/firebase/FirebaseRepository.kt | data/firebase/SyncManager.kt,TC-SYNC-01,Implemented,Not yet verified
 FR-SYNC-02,Cloud data under per-user anonymous UID path,Must,RISK-005,data/firebase/FirebaseRepository.kt,TC-SYNC-02,Implemented,Not yet verified
 FR-SYNC-03,Retry unacknowledged uploads at next launch,Should,,data/firebase/SyncManager.kt | data/database/dao/Daos.kt,TC-SYNC-03,Implemented,Not yet verified
 FR-SYNC-04,Delete All and withdrawal also delete cloud data,Must,RISK-005,data/firebase/SyncManager.kt | data/firebase/FirebaseRepository.kt | ui/screens/SettingsScreen.kt,TC-SYNC-04,Implemented,Not yet verified
-FR-SYNC-05,Single-session delete also deletes cloud copy,Must,RISK-005,data/repository/EcgRepository.kt | ui/viewmodels/HistoryViewModel.kt,TC-SYNC-05,Not implemented,Not run
+FR-SYNC-05,Single-session delete also deletes cloud copy,Must,RISK-005,data/firebase/SyncManager.kt (deleteSessionEverywhere) | ui/viewmodels/HistoryViewModel.kt,TC-SYNC-05,Implemented,Not run
 FR-SQ-01,Per-beat signal quality score and flags,Must,RISK-003 RISK-009 RISK-012,data/ml/SignalQualityAnalyzer.kt,TC-SQ-01,Implemented,Verified
 FR-SQ-02,Withhold abnormal classifications on unusable beats,Must,RISK-002 RISK-003 RISK-009,ui/viewmodels/LiveMonitorViewModel.kt | data/ml/SignalQualityAnalyzer.kt,TC-SQ-04 TC-SQ-03,Implemented,Partially verified (gate and suppressed count tested; ViewModel path not)
 FR-SQ-03,Live drift score banded against training,Must,RISK-011 RISK-014,data/ml/SignalQualityAnalyzer.kt | data/ml/ClassificationMonitor.kt | ui/screens/LiveMonitorScreen.kt,TC-SQ-02,Implemented,Partially verified (computation tested; display not)
-FR-SQ-04,Store per-session model-health scalars,Should,RISK-014,data/ml/ClassificationMonitor.kt | data/database/entities/Entities.kt | data/database/EcgDatabase.kt,TC-SQ-03 TC-DB-01,Implemented,Partially verified (computation tested; migration tests not run)
+FR-SQ-04,Store per-session model-health scalars,Should,RISK-014,data/ml/ClassificationMonitor.kt | data/database/entities/Entities.kt | data/database/EcgDatabase.kt,TC-SQ-03 TC-DB-01,Implemented,Verified (computation tested in CI; migrations 9/9 on device)
 FR-SQ-05,Lead-off status and live T/R display,Must,RISK-003 RISK-011 RISK-012,ui/screens/LiveMonitorScreen.kt | ui/viewmodels/LiveMonitorViewModel.kt,TC-SQ-05,Implemented,Not yet verified
 NFR-01,Support Android API 26+,Must,,build.gradle.kts,—,Implemented,Not yet verified
 NFR-02,No raw ECG waveform transmitted over the network,Must,RISK-005,data/firebase/FirebaseRepository.kt,TC-SYNC-01,Implemented,Not yet verified
@@ -71,4 +71,4 @@ NFR-04,Crash rate < 0.1% of sessions,Must,RISK-006,— (crash monitoring require
 NFR-05,DB write latency < 50ms p95,Should,,data/repository/EcgRepository.kt,TC-PERF-03,Pending,Not run
 NFR-06,Health status text reviewed by non-technical user,Must,RISK-007,ui/screens/SessionDetailScreen.kt,TC-ARR-07,Pending,Not run
 NFR-07,Consent text reviewed by legal/regulatory professional,Must,RISK-005,ui/screens/ConsentScreen.kt,—,Pending,Not run
-NFR-08,Health data excluded from cloud backup and device-to-device transfer,Must,RISK-005,AndroidManifest.xml | res/xml/data_extraction_rules.xml,TC-PRIV-01,Partial (backup disabled; device transfer not excluded),Not run
+NFR-08,Health data excluded from cloud backup and device-to-device transfer,Must,RISK-005,AndroidManifest.xml | res/xml/data_extraction_rules.xml,TC-PRIV-01,Implemented (all domains excluded),Not run
