@@ -27,8 +27,7 @@ docstrings of [`scripts/preprocess.py`](scripts/preprocess.py) and
   mean. When the real `SignalProcessor.cpp` is compiled on the host and fed MIT-BIH, its beat
   windows match the training data to about 1 µV.
 - **3 classes, not 5.** Paced (Q) beats are trivially separable and leak across splits.
-  Fusion (F) beats are ambiguous and too rare for inter-patient learning, so they are merged
-  into V.
+  Fusion (F) beats are ambiguous and too rare for inter-patient learning, so they are dropped.
 - **RR features** carry the timing cue (premature beat, compensatory pause) that
   supraventricular beats need, because their QRS shape is nearly normal.
 - **Ensembling.** Single runs varied from 0.68 to 0.78 macro-F1 because checkpointing and

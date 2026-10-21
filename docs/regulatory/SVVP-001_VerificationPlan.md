@@ -227,7 +227,7 @@ Status as of 2026-10-21. **Pass** = run and passed; **Pass (dev)** = development
 | detekt | Pass | CI, 2026-10-21: no new findings |
 | TC-PAR-01 | Pass | `c4ef8c5`: same fiducial sample for 92–100% of beats per record, within one sample for 99%; `a789e2f`: firmware chain reproduced in training. CLAUDE.md: windows match to ≈1 µV where the ADC does not clip; R-peaks on the same sample for >99% of beats |
 | TC-HIL-01 | Pass (earlier firmware) | `a789e2f`: on-device output matches the host bit-for-bit in R-peaks and RR features |
-| TC-ML-01 | Done (no threshold) | `c4ef8c5`: `model_ensemble_20261015_212815`, DS2 end-to-end macro-F1 0.772 (training path 0.780); SVEB F1 0.46 |
+| TC-ML-01 | Done (no threshold) | `c4ef8c5`: `model_ensemble_20261015_212815`, DS2 end-to-end macro-F1 0.772 (training path 0.780); SVEB F1 0.46. Per-class, per-record, bootstrap and subgroup results on the training path (re-run 2026-10-21, macro-F1 0.779): MLD-001 §5 |
 | TC-HW-01 | Pass | CLAUDE.md / `34862c5`: gain ≈1000–1090, flat to 40 Hz |
 | TC-WEAR-01 | Pass (one wearer) | CLAUDE.md / `34862c5`, `c4ef8c5`: QRS 1.35 mV p-p, no clipping, 12 µV PR-segment noise, T/R 0.22; 100% of beats Normal, mean confidence 0.93 |
 | TC-FW-07 | Pass (dev) | `e1f0c17`: 24/24 and 62/62 beats with dropouts injected (old policy: 0 and 5) |
@@ -247,4 +247,4 @@ Status as of 2026-10-21. **Pass** = run and passed; **Pass (dev)** = development
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft |
 | 1.1 | 2026-10-16 | Oliver Moberg | Educational status stated. Scope extended to firmware. Test levels added (firmware native, offline, HIL, bench, wearer, detekt). TC-ECG-03/05, TC-ARR-01/02/04/05/06 updated (250 Hz, 3 classes, SVEB thresholds). Added TC-ECG-06, TC-ARR-08..12, TC-FW-01..10, TC-PAR-01, TC-HIL-01, TC-DET-01, TC-ML-01, TC-HW-01, TC-WEAR-01, TC-SQ-01..05, TC-DB-01, TC-CON-08, TC-AUD-06, TC-SYNC-01..05, TC-PRIV-01. Regression suite reflects local runs (no CI). Added §7 verification results |
-| 1.2 | 2026-10-21 | Oliver Moberg | CI added as a test level and as the regression suite (§5). Added TC-CI-01. TC-DB-01 extended to v6 (9 cases) and recorded as passed on a device. §7: CI evidence; TC-FW-09 app parser passed; TC-ARR-10 partial; OA-1..5 test cases moved from Fails / Not implemented to Not run (implemented) |
+| 1.2 | 2026-10-21 | Oliver Moberg | CI added as a test level and as the regression suite (§5). Added TC-CI-01. TC-DB-01 extended to v6 (9 cases) and recorded as passed on a device. §7: CI evidence; TC-FW-09 app parser passed; TC-ARR-10 partial; OA-1..5 test cases moved from Fails / Not implemented to Not run (implemented). TC-ML-01 links the MLD-001 §5 analysis |

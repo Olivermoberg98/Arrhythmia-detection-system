@@ -62,6 +62,17 @@ honest than a random beat-level split.
 | Model | 4-member residual 1D CNN ensemble, ~700 KB INT8 TFLite |
 | Firmware ↔ training parity | Beat windows match to ~1 µV; R-peaks agree on >99 % of beats |
 
+| Class (training path) | Sensitivity | Positive predictivity | F1 |
+|---|---|---|---|
+| Normal | 0.986 | 0.963 | 0.974 |
+| Supraventricular | **0.429** | 0.554 | 0.483 |
+| Ventricular | 0.792 | 0.988 | 0.879 |
+
+Supraventricular beats are the weak class. Three quarters of the test SVEBs come from a
+single patient, and a patient-level bootstrap puts SVEB F1 anywhere between 0.11 and 0.54.
+Per-patient and age/sex subgroup results, data provenance and the model change procedure
+are in [MLD-001](docs/regulatory/MLD-001_MachineLearningDevelopment.md).
+
 ## Engineering highlights
 
 - **Training reproduces the firmware, not the other way round.** Preprocessing models the
@@ -81,9 +92,12 @@ honest than a random beat-level split.
   monitoring, and crash-safe chunked recording.
 - **Privacy by design.** Explicit consent gates every screen and an audit log records
   access. Only session metadata is synced to the cloud.
-- **Regulatory-style documentation.** An IEC 62304 / ISO 14971 / GDPR-inspired document set
-  lives in [`docs/regulatory/`](docs/regulatory/): architecture, requirements, risk
-  management, DPIA, verification plan and traceability matrix.
+- **Regulatory-style documentation.** An IEC 62304 / ISO 14971 / GDPR / EU AI Act-inspired
+  document set lives in [`docs/regulatory/`](docs/regulatory/): requirements, architecture,
+  risk management, verification plan, traceability matrix, DPIA, and a machine-learning
+  development file covering data governance, subgroup performance and model change
+  control. Its [index](docs/regulatory/README.md) maps the set against a full MDR technical
+  file and states what is out of scope, and why.
 
 ## Repository layout
 
@@ -92,7 +106,7 @@ honest than a random beat-level split.
 | [`arrhythmia_system_controller/`](arrhythmia_system_controller/) | ESP32-S3 firmware: sampling, filtering, R-peak detection, BLE GATT server; host unit tests; serial capture and offline validation tools | C++17, Arduino, FreeRTOS, NimBLE, PlatformIO |
 | [`ecg_monitor_app/`](ecg_monitor_app/) | Android app: BLE client, TFLite inference, Room storage, Firebase sync, PDF export | Kotlin, Jetpack Compose, Room, Kable, TFLite |
 | [`ml_pipeline/`](ml_pipeline/) | Data download, firmware-parity preprocessing, training, TFLite conversion ([README](ml_pipeline/README.md)) | Python 3.10, TensorFlow 2.15, WFDB |
-| [`docs/regulatory/`](docs/regulatory/) | Architecture, requirements, risk, data-protection and verification documents | Markdown, CSV |
+| [`docs/regulatory/`](docs/regulatory/) | Requirements, architecture, risk, verification, data-protection and machine-learning documents | Markdown, CSV |
 
 ## Hardware
 
@@ -172,7 +186,8 @@ Room migration tests run on a device (`./gradlew connectedAndroidTest`).
 
 - **ADC headroom.** The ADC saturates at about ±1.4 mV electrode-referred. Large QRS
   complexes can clip on the device, which does not happen in training.
-- **Single lead, 3 classes.** Fusion beats are merged into V and paced beats are excluded.
+- **Single lead, 3 classes.** Fusion, paced and unclassifiable beats are excluded from
+  training and are not detected.
   Atrial fibrillation and other rhythm-level diagnoses are out of scope.
 - **Small validation set.** Threshold tuning and checkpoint selection rely on 4 validation
   records. That is the reason for the ensemble, and it remains a source of uncertainty.
