@@ -27,7 +27,7 @@ Inference runs **on the Android app, using the phone's compute — permanently, 
 
 The on-ESP32 path has been removed (TFLite arena flag, C-header generation). The live artifacts are `arrhythmia_model.tflite` (INT8 weights, float32 I/O) + `model_metadata.json`, copied together into the app's `assets/`. INT8 was originally chosen for TFLite Micro; the phone doesn't need it, but the shipped thresholds were tuned against the INT8 build, so switching to the `_f32` model is a classifier behaviour change — ask first.
 
-There is no root `README.md`; this file is the project's top-level documentation.
+The public-facing overview is the root `README.md` (portfolio audience); this file holds the working detail behind it. Keep the README's numbers and claims in sync when they change here.
 
 ## Cross-project contracts
 
@@ -107,9 +107,9 @@ Then copy `src/ml/arrhythmia_model.tflite` + `model_metadata.json` into `ecg_mon
 
 **Scalers and model must come from the same run.** `data/processed/*_scaler.pkl` is overwritten by every `preprocess.py` run, so re-running `extract_constants.py` after a new preprocess without retraining would ship wrong normalisation. The shipped model is `model_ensemble_20261015_212815`: the softmax average of 4 independently trained residual runs (`train_model.py --ensemble 4`), merged into one TFLite (same inputs/outputs as a single model, ~700 KB INT8), trained with the slope-energy-centroid beat fiducial. Single runs vary too much to ship one: identical training landed anywhere from 0.68 to 0.78 end-to-end macro-F1, mostly because threshold tuning and checkpoint selection rely on only 4 validation records. Thresholds are tuned on validation only. DS2 end-to-end 0.772 (firmware path, board-filtered input), training-path 0.780. After retraining, also update `ArrhythmiaClassifier.EXPECTED_DRIFT_SCORE` (mean |z| of `X_train.npy`).
 
-**Offline check of a model on captured ECG**: `python tools/data_capture/validate.py --data <csv> --model <tflite> --metadata <json>` (from `arrhythmia_system_controller/`). Note `capture.py` currently receives nothing: the serial CSV `printf` in `main.cpp` is commented out.
+**Offline check of a model on captured ECG**: `python tools/data_capture/validate.py --data <csv> --model <tflite> --metadata <json>` (from `arrhythmia_system_controller/`). `capture.py` needs firmware built with `-DENABLE_SERIAL_STREAM=1` (per-sample CSV over serial; off by default).
 
-`ml_pipeline/README.md` documents a `scripts/03_preprocess.py`..`05_convert_model.py` numbering and a `src/` module layout (`data_loader.py`, `models.py`, …) **that does not exist**, and describes ESP32 deployment. Use the commands above.
+`ml_pipeline/README.md` documents the same workflow for public readers.
 
 **App** (`ecg_monitor_app/`): see `ecg_monitor_app/CLAUDE.md`.
 
@@ -140,11 +140,10 @@ Then copy `src/ml/arrhythmia_model.tflite` + `model_metadata.json` into `ecg_mon
 
 ## Known stale / open questions
 
-Resolved: PPG/MAX30102 is dropped; inference stays on the phone; the old root README and the on-ESP32 inference code were removed; `validate.py` was rebuilt for the beat-window pipeline; `local.properties` is untracked.
+Resolved: PPG/MAX30102 is dropped; inference stays on the phone; the on-ESP32 inference code was removed; a root README, a rewritten `ml_pipeline/README.md` and CI were added (2026-10-21); `validate.py` was rebuilt for the beat-window pipeline; `local.properties` is untracked.
 
 - **Open actions from the regulatory review** are listed in `docs/regulatory/RMF-001_RiskManagementFile.md` §6 (OA-1..7). OA-1..6 are implemented (2026-10-18) but the app ones still need on-device verification (see `ecg_monitor_app/CLAUDE.md`'s TODO); OA-7 is an accepted limitation. Update the OA status there when you change one.
-- **`ml_pipeline/README.md` is stale** (wrong script names, ESP32 deployment). Use the commands in this file.
 - **ADC headroom**: ±1.41 mV electrode-referred full scale is tight for a 1–3 mV QRS; clipping distorts beats and shifts R-peaks. Board-gain dependent, unverified on hardware.
 - **Privacy framing**: processing is on-device (ESP32 + phone), but the app syncs session *metadata* to Firebase. Don't describe the system as "no cloud"; raw waveforms stay local.
-- **No CI.** No GitHub Actions or other automation; tests run locally only.
+- **CI** (`.github/workflows/ci.yml`): firmware `pio test -e native` + `esp32s3cam` build; app `test detekt assembleDebug` with a placeholder `google-services.json`; ML byte-compile, app-asset ↔ `src/ml/` identity, and `model_metadata.json` ↔ `config.h` shape check. Room migration tests and `validate.py` still run locally only.
 - **Test coverage is thin.** `test/test_signal_processor` (`pio test -e native`) covers SignalProcessor with synthetic ECG: detection, the 96/32 window, real `post_rr`, the 8-interval RR mean, reset. Not covered: main.cpp's lead-off/settling logic, BLE, and the ML pipeline (end-to-end parity with MIT-BIH was verified by hand, not by a committed test). If a native test fails to link with a silent `ld returned 5`, see the `UNITY_WEAK_ATTRIBUTE` note in `platformio.ini`.

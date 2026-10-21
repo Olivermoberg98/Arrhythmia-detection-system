@@ -1,179 +1,107 @@
-# ML Pipeline - Arrhythmia Detection
+# ML pipeline
 
-This directory contains all the machine learning code for training, evaluating, and converting models for arrhythmia detection.
+Offline training of the heartbeat classifier that runs in the Android app. It takes the
+MIT-BIH Arrhythmia Database, reproduces the device's signal chain, trains a dual-input
+residual 1D CNN and exports a TensorFlow Lite model plus its normalisation and threshold
+metadata.
 
-## Overview
+| | |
+|---|---|
+| **Task** | Per-beat classification into 3 AAMI superclasses: Normal (N), Supraventricular (S), Ventricular (V) |
+| **Inputs** | 128-sample beat window at 250 Hz (96 before / 32 after the fiducial) + 3 RR features `[pre_rr_norm, post_rr_norm, ratio_rr]` |
+| **Split** | Inter-patient DS1 (train/val) / DS2 (test), de Chazal et al. (2004): no patient appears in both |
+| **Model** | Softmax average of 4 independently trained residual CNNs, merged into one TFLite (~700 KB, INT8 weights, float32 I/O) |
+| **Decision rule** | `argmax(probs / thresholds)`, with per-class thresholds tuned on validation only |
+| **Result** | DS2 macro-F1 **0.772** end-to-end (firmware filter path, board-filtered input) |
 
-The ML pipeline is separate from the ESP32 firmware and runs on your laptop/PC. It handles:
-1. Data acquisition and preprocessing
-2. Model training and fine-tuning
-3. Model evaluation and explainability (XAI)
-4. Model conversion to TensorFlow Lite for ESP32 deployment
+## Design highlights
 
-## Directory Structure
+The rationale for each modelling decision, with literature citations, is in the module
+docstrings of [`scripts/preprocess.py`](scripts/preprocess.py) and
+[`scripts/train_model.py`](scripts/train_model.py). In short:
 
+- **Training reproduces the firmware.** Raw MIT-BIH (360 Hz) is passed through a model of
+  the AD8232 board's analogue filters, resampled to 250 Hz, and filtered with the firmware's
+  exact causal biquad coefficients. Beats are aligned on the same QRS slope-energy-centroid
+  fiducial the firmware's detector uses, and RR features use the firmware's 8-beat running
+  mean. When the real `SignalProcessor.cpp` is compiled on the host and fed MIT-BIH, its beat
+  windows match the training data to about 1 µV.
+- **3 classes, not 5.** Paced (Q) beats are trivially separable and leak across splits.
+  Fusion (F) beats are ambiguous and too rare for inter-patient learning, so they are merged
+  into V.
+- **RR features** carry the timing cue (premature beat, compensatory pause) that
+  supraventricular beats need, because their QRS shape is nearly normal.
+- **Ensembling.** Single runs varied from 0.68 to 0.78 macro-F1 because checkpointing and
+  threshold tuning rest on only 4 validation records. Averaging 4 runs removes most of that
+  variance without selecting on the test set.
+- **No leakage.** Normalisation statistics come from the training split only.
+
+## Setup
+
+Python 3.10 (TensorFlow 2.15).
+
+```bash
+cd ml_pipeline
+python -m venv .venv
+.venv\Scripts\Activate.ps1        # Windows PowerShell
+# source .venv/bin/activate       # Linux / macOS
+pip install -r requirements.txt
 ```
-ml_pipeline/
-├── data/
-│   ├── raw/              # Downloaded datasets (gitignored)
-│   ├── processed/        # Preprocessed data (gitignored)
-│   └── personal/         # Your own collected data (gitignored)
-├── models/
-│   ├── trained/          # Trained models (.h5, .keras) (gitignored)
-│   └── converted/        # TFLite models for ESP32 (tracked in git)
-├── notebooks/            # Jupyter notebooks for exploration
-├── scripts/              # Numbered scripts for workflow
-│   ├── 01_download_data.py
-│   ├── 02_explore_data.py
-│   ├── 03_preprocess.py
-│   ├── 04_train_model.py
-│   └── 05_convert_model.py
-├── src/                  # Reusable Python modules
-│   ├── data_loader.py
-│   ├── preprocessing.py
-│   ├── models.py
-│   └── utils.py
-├── requirements.txt      # Python dependencies
-└── SETUP.md             # Setup instructions
-```
+
+Set `PYTHONIOENCODING=utf-8` if you redirect script output, because the scripts print
+box-drawing characters.
 
 ## Workflow
 
-### Phase 1: Setup (Do This First!)
-1. Follow instructions in `SETUP.md` to create virtual environment
-2. Install dependencies: `pip install -r requirements.txt`
-3. Verify installation works
+```bash
+python scripts/01_download_data.py     # MIT-BIH from PhysioNet (~100 MB) → data/raw/
+python scripts/02_explore_data.py      # optional: plots of records and beat types
+python scripts/analyze_mitbih.py       # optional: per-record AAMI class tallies, DS1/DS2 comparison
+python scripts/preprocess.py           # → data/processed/ (beats, RR features, scalers, metadata)
+python scripts/train_model.py --ensemble 4   # → models/trained/ (omit --ensemble for a single run)
 
-### Phase 2: Data Collection (Week 1)
-1. **Download public dataset:**
-   ```bash
-   python scripts/01_download_data.py
-   ```
-   This downloads MIT-BIH Arrhythmia Database (~100MB)
+python convert_model.py --model models/trained/model_ensemble_<ts>.keras \
+    --meta data/processed/metadata.pkl \
+    --ecg data/processed/X_val.npy --rr data/processed/RR_val.npy   # → src/ml/*.tflite
 
-2. **Explore the data:**
-   ```bash
-   python scripts/02_explore_data.py
-   ```
-   Visualize ECG signals and understand different beat types
-
-### Phase 3: Preprocessing (Week 1-2)
-3. **Preprocess data:**
-   ```bash
-   python scripts/03_preprocess.py
-   ```
-   - Filter noise
-   - Normalize signals
-   - Segment beats
-   - Create train/validation/test splits
-
-### Phase 4: Model Training (Week 2-4)
-4. **Train model:**
-   ```bash
-   python scripts/04_train_model.py
-   ```
-   - Load preprocessed data
-   - Fine-tune foundation model or train from scratch
-   - Evaluate performance
-   - Save best model
-
-### Phase 5: Conversion (Week 4)
-5. **Convert to TensorFlow Lite:**
-   ```bash
-   python scripts/05_convert_model.py
-   ```
-   - Convert .h5/.keras to .tflite
-   - Apply INT8 quantization
-   - Convert to C array for ESP32
-   - Validate conversion accuracy
-
-## Python vs ESP32 Workflow
-
-**Python (this directory):**
-- Data science and ML experimentation
-- Train models on powerful laptop/desktop
-- Use full TensorFlow with GPU support (if available)
-- Iterate quickly with large datasets
-
-**ESP32 (arrhythmia_system_controller):**
-- Real-time embedded inference
-- Uses tiny converted models (.tflite → C array)
-- Limited to TensorFlow Lite Micro
-- Optimized for speed and memory
-
-## Model Pipeline Flow
-
-```
-Public Dataset (MIT-BIH)
-         ↓
-[Python] Download & Explore
-         ↓
-[Python] Preprocess & Filter
-         ↓
-[Python] Train/Fine-tune Model → model.h5
-         ↓
-[Python] Evaluate & XAI Analysis
-         ↓
-[Python] Convert to TFLite → model.tflite (quantized)
-         ↓
-[Python] Convert to C Array → model_data.h
-         ↓
-[C++] Include in ESP32 Firmware
-         ↓
-[ESP32] Real-time Inference
+python extract_constants.py --meta data/processed/metadata.pkl \
+    --ecg_scaler data/processed/ecg_scaler.pkl --rr_scaler data/processed/rr_scaler.pkl \
+    --results models/trained/results_<ts>.pkl                       # → src/ml/model_metadata.json
 ```
 
-## Key Concepts
+Then copy `src/ml/arrhythmia_model.tflite` and `src/ml/model_metadata.json` together into
+`ecg_monitor_app/app/src/main/assets/`. CI checks that the two copies are identical.
 
-### Foundation Model Fine-tuning
-Instead of training from scratch, we:
-1. Find a pre-trained ECG model (trained on millions of samples)
-2. "Fine-tune" it on our specific task (arrhythmia detection)
-3. Benefit: Better accuracy with less data and training time
+> **The scalers and the model must come from the same run.** Every `preprocess.py` run
+> overwrites `data/processed/*_scaler.pkl`. If you run `extract_constants.py` after a new
+> preprocess without retraining, the app ships with the wrong normalisation.
 
-### Quantization
-Convert 32-bit float model → 8-bit integer model:
-- **Before:** 1MB model, slow inference
-- **After:** 250KB model, 4x faster, fits on ESP32
-- **Cost:** Tiny accuracy drop (~1-2%)
+After retraining, also update `ArrhythmiaClassifier.EXPECTED_DRIFT_SCORE` in the app (the
+mean |z| of `X_train.npy`), which the app uses for input-drift monitoring.
 
-### XAI (Explainable AI)
-Make the model interpretable:
-- SHAP values: Which parts of ECG signal mattered most?
-- Attention maps: Where did the model "look"?
-- Useful for: Debugging, trust, medical validation
+## Layout
 
-## Tips
+```
+ml_pipeline/
+├── scripts/            # 01_download → preprocess → train_model (+ exploration/analysis)
+├── convert_model.py    # Keras → INT8 and float32 TFLite
+├── extract_constants.py# scalers + thresholds → model_metadata.json
+├── src/ml/             # shipped artifacts (tracked): arrhythmia_model.tflite, _f32 reference, model_metadata.json
+├── notebooks/          # ECG basics walkthrough
+├── data/               # raw/, processed/, personal/ (all gitignored)
+└── models/trained/     # per-run Keras models, results and plots (gitignored)
+```
 
-1. **Start small:** Use a subset of data first (e.g., 5 records) to test pipeline
-2. **Use Jupyter:** Great for interactive exploration and plotting
-3. **Save often:** Training can take hours, checkpoint regularly
-4. **Document decisions:** Keep notes on what works/doesn't work
-5. **Version control:** Commit working models and preprocessing configs
+## Cross-project contracts
 
-## Current ML Trends (2025-2026)
+The sample rate, beat window, RR feature definition, filter coefficients and class list are
+duplicated in the firmware (`arrhythmia_system_controller/src/config.h`), in this pipeline,
+in `model_metadata.json` and in the app's classifier. Nothing checks at runtime that they
+agree, so a change to one must be made in all of them.
 
-Modern approaches we'll use:
-- **Transfer learning** from foundation models (not training from scratch)
-- **Efficient architectures** (MobileNet-style for embedded)
-- **Quantization-aware training** (train knowing it'll be quantized)
-- **Federated learning** concepts (privacy-preserving, though not implemented yet)
-- **Explainable AI** (required for medical applications)
+## Data
 
-## Resources
-
-- [TensorFlow Lite Guide](https://www.tensorflow.org/lite)
-- [WFDB Python Package](https://wfdb.readthedocs.io/)
-- [MIT-BIH Database](https://physionet.org/content/mitdb/1.0.0/)
-- [PhysioNet](https://physionet.org/) - Medical signal databases
-
-## Next Steps After Setup
-
-1. Run `01_download_data.py` to get MIT-BIH dataset
-2. Run `02_explore_data.py` to understand ECG signals
-3. Read through the notebook examples (coming soon)
-4. Start experimenting!
-
-## Questions?
-
-Common issues and solutions will be documented here as we encounter them.
+MIT-BIH Arrhythmia Database: Moody GB, Mark RG. *The impact of the MIT-BIH Arrhythmia
+Database.* IEEE Eng Med Biol 20(3):45-50 (2001). Distributed by PhysioNet: Goldberger AL et
+al., *Circulation* 101(23):e215-e220 (2000). Available under the
+[Open Data Commons Attribution License v1.0](https://physionet.org/content/mitdb/1.0.0/).
