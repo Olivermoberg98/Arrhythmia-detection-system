@@ -4,7 +4,7 @@ capture.py – Serial data capture tool for arrhythmia system.
 Usage:
     python capture.py --port COM3 --duration 60 --out raw_ecg.csv
 
-Expects CSV lines from the ESP32 debug build:
+Expects CSV lines from firmware built with -DENABLE_SERIAL_STREAM=1:
     timestamp_ms,ecg_raw,ecg_filtered
 
 Writes a clean CSV file with:
@@ -34,7 +34,6 @@ PERIOD_MS      = 1000 / SAMPLE_RATE_HZ           # 4 ms
 DROP_THRESHOLD = PERIOD_MS * 2.5                  # flag if gap > 10 ms
 
 EXPECTED_HEADER = "timestamp_ms,ecg_raw,ecg_filtered"
-INFERENCE_PREFIX = "[INFER]"
 
 # ---- Helpers ---------------------------------------------------------
 
@@ -63,7 +62,6 @@ def capture(port: str, duration: float, out_path: Path):
         "total_samples":   0,
         "dropped_frames":  0,
         "lead_off_events": 0,
-        "inferences":      [],
     }
 
     prev_ts_ms   = None
@@ -94,12 +92,6 @@ def capture(port: str, duration: float, out_path: Path):
                 # --- Header line from firmware ---
                 if line == EXPECTED_HEADER:
                     header_found = True
-                    continue
-
-                # --- Inference log lines ---
-                if line.startswith(INFERENCE_PREFIX):
-                    stats["inferences"].append(line)
-                    print(f"  {line}")
                     continue
 
                 if not header_found:
@@ -154,9 +146,6 @@ def capture(port: str, duration: float, out_path: Path):
     print(f"  Effective rate: {actual_hz:.1f} Hz  (expected {SAMPLE_RATE_HZ} Hz)")
     print(f"  Dropped frames: {stats['dropped_frames']}")
     print(f"  Lead-off events:{stats['lead_off_events']}")
-    print(f"  Inferences    : {len(stats['inferences'])}")
-    for inf in stats["inferences"]:
-        print(f"    {inf}")
     print(f"  Output file   : {out_path}")
     print(f"{'─'*50}")
 

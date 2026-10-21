@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: Firmware (unit tests + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arrhythmia_system_controller
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('arrhythmia_system_controller/platformio.ini') }}
+      - run: pip install platformio
+      - name: Host unit tests (SignalProcessor)
+        run: pio test -e native
+      - name: Build ESP32-S3 firmware
+        run: pio run -e esp32s3cam
+
+  android:
+    name: Android app (unit tests + detekt + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ecg_monitor_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      # The real google-services.json is per-environment and never committed;
+      # the google-services plugin only needs a well-formed file to build.
+      - name: Placeholder google-services.json
+        run: |
+          cat > app/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "ci-placeholder",
+              "storage_bucket": "ci-placeholder.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                "android_client_info": { "package_name": "com.ecgmonitor.app" }
+              },
+              "oauth_client": [],
+              "api_key": [{ "current_key": "ci-placeholder" }],
+              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+            }],
+            "configuration_version": "1"
+          }
+          EOF
+      - run: ./gradlew test detekt assembleDebug --console=plain
+
+  ml-contracts:
+    name: ML pipeline (syntax + model artifact sync)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Byte-compile Python sources
+        run: python -m compileall -q ml_pipeline/scripts ml_pipeline/*.py arrhythmia_system_controller/tools
+      # The app must ship exactly what the pipeline produced; model and metadata travel together.
+      - name: App assets match pipeline output
+        run: |
+          cmp ml_pipeline/src/ml/arrhythmia_model.tflite ecg_monitor_app/app/src/main/assets/arrhythmia_model.tflite
+          cmp ml_pipeline/src/ml/model_metadata.json     ecg_monitor_app/app/src/main/assets/model_metadata.json
+      - name: Metadata matches firmware contracts
+        run: |
+          python - <<'EOF'
+          import json, re
+          meta = json.load(open("ml_pipeline/src/ml/model_metadata.json"))
+          cfg = open("arrhythmia_system_controller/src/config.h").read()
+          def const(name):
+              return int(re.search(rf"\b{name}\s*=\s*(\d+)", cfg).group(1))
+          assert meta["sample_rate_hz"] == const("ECG_SAMPLE_RATE_HZ"), "sample rate"
+          assert meta["beat_length"] == const("BEAT_PRE_SAMPLES") + const("BEAT_POST_SAMPLES"), "beat window"
+          assert len(meta["classes"]) == const("NUM_CLASSES"), "classes"
+          assert meta["n_rr_features"] == 3, "RR features"
+          print("contracts OK")
+          EOF

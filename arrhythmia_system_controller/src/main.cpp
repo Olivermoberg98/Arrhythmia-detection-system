@@ -86,9 +86,10 @@ static void sensorTask(void* /*param*/) {
             const bool beatSettled = s_settleLeft == 0 &&
                 processor.samplesSinceR() + SamplingCfg::BEAT_PRE_SAMPLES <= s_settledFor;
 
-// #if ENABLE_SERIAL_CAPTURE
-//             Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
-// #endif
+            // Per-sample CSV for tools/data_capture/capture.py: build with -DENABLE_SERIAL_STREAM=1.
+#if ENABLE_SERIAL_CAPTURE && defined(ENABLE_SERIAL_STREAM) && ENABLE_SERIAL_STREAM
+            Serial.printf("%lu,%d,%d\n", now, (int)raw, (int)sampleToSend);
+#endif
 
             ecgBatch[batchCount++] = sampleToSend;
 
@@ -112,25 +113,21 @@ static void sensorTask(void* /*param*/) {
             if (!leadOff && beatSettled && processor.isBeatReady()) {
                 BLECfg::BeatPacket beatPkt = {};
                 beatPkt.marker       = 0xBE;
-                // config.h documents this as the R-peak timestamp, but it was
-                // millis() at send time — late by the post-R window plus the
-                // crest search. Back-date it so the app can align the beat to
-                // its own stream.
+                // Back-date to the R-peak: the beat is sent one post-R window
+                // plus crest search after it, and the app aligns on this time.
                 beatPkt.timestamp_ms = millis()
                     - (processor.samplesSinceR() * 1000u
                        / SamplingCfg::ECG_SAMPLE_RATE_HZ);
                 beatPkt.beat_num     = s_beatNum++;
-                
-                // Was hardcoded to 250 — overflowed beatPkt.ecg (int16_t[128]).
+
                 float beatFloat[SamplingCfg::BEAT_WINDOW_SAMPLES];
                 processor.getBeat(beatFloat);
                 for (size_t i = 0; i < SamplingCfg::BEAT_WINDOW_SAMPLES; i++) {
                     beatPkt.ecg[i] = static_cast<int16_t>(beatFloat[i]);
                 }
-                
-                // Get RR features (3 values)
+
                 processor.getRRFeatures(beatPkt.rr_features);
-                
+
                 ble.sendBeat(beatPkt);
 
 #if ENABLE_SERIAL_CAPTURE
@@ -155,7 +152,7 @@ void setup() {
 #if ENABLE_SERIAL_CAPTURE
     Serial.begin(SerialCfg::BAUD_RATE);
     while (!Serial) { delay(10); }
-    Serial.println("[INIT] Starting ECG Monitor v2.0");
+    Serial.println("[INIT] Starting ECG Monitor");
 #endif
 
     if (!ecg.begin()) {
@@ -178,7 +175,7 @@ void setup() {
     Serial.println("[OK] BLE initialized");
 #endif
 
-    // Single task
+    // Sampling, filtering, detection and BLE TX all run in one task on core 1.
     xTaskCreatePinnedToCore(
         sensorTask,
         "SensorTask",

@@ -1,5 +1,5 @@
 """
-Script 02: Explore ECG Data
+02_explore_data.py: Explore ECG Data
 
 This script helps you visualize and understand ECG signals from the MIT-BIH database.
 You'll learn to identify normal heartbeats and common arrhythmias.

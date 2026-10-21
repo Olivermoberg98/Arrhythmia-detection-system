@@ -1,7 +1,7 @@
 """
-Script 03: Preprocess ECG Data
+preprocess.py: Preprocess ECG Data
 
-This version:
+Summary:
 ✔ Patient-level splits following de Chazal et al. (2004) DS1/DS2 standard
 ✔ The AD8232 board's analogue filters, modelled at 360 Hz (see "Firmware parity")
 ✔ Exact rational downsample 360 → 250 Hz (resample_poly, factor 25/36)
@@ -92,15 +92,15 @@ Three RR features are computed per beat (from snapped R-peak positions):
   3. ratio_rr     = pre_rr / post_rr
 
 local_mean_rr is the mean of the last RR_MEAN_WINDOW (8) intervals up to and
-including pre_rr — the same causal running mean the firmware keeps. It used to
-be the whole-record mean, which the firmware cannot know: a 30-minute average
+including pre_rr — the same causal running mean the firmware keeps. A whole-record
+mean is not used because the firmware cannot know it: a 30-minute average
 vs an 8-beat one gives different values whenever the rate drifts. 8 beats
 (~6-8 s) is close to de Chazal et al.'s (2004) ~10 s "local average RR".
 
 post_rr needs the next beat, so the firmware holds each beat until the next
 R-peak is detected (one RR interval of latency) rather than approximating it.
-An earlier firmware sent post_rr = pre_rr, which made ratio_rr a constant 1
-and threw away the compensatory-pause cue below.
+Approximating post_rr = pre_rr would make ratio_rr a constant 1 and throw
+away the compensatory-pause cue described above.
 
 RR timing uses EVERY annotated beat, including the F/Q/paced beats that are
 then dropped as labels: the firmware's detector sees those beats too, so
@@ -114,12 +114,12 @@ These are then StandardScaler-normalized using training statistics only.
 Firmware parity — why training reproduces the ESP32 signal chain exactly:
 ─────────────────────────────────────────────────────────────────────────────
 The model only ever sees beats produced by the firmware, so the training
-beats must be produced the same way.  Earlier versions used a zero-phase
-4th-order Butterworth bandpass at 360 Hz, while the firmware runs causal
-2nd-order biquads (HP 0.5 Hz, LP 40 Hz, 50 Hz notch) at 250 Hz.  Causal
-filters shift and reshape the waveform (phase response, HP undershoot after
-the QRS, the notch's ~4% passband gain), so the CNN was learning a
-morphology the device never produces.
+beats must be produced the same way.  The usual offline choice, a zero-phase
+4th-order Butterworth bandpass at 360 Hz, does not match the firmware, which
+runs causal 2nd-order biquads (HP 0.5 Hz, LP 40 Hz, 50 Hz notch) at 250 Hz.
+Causal filters shift and reshape the waveform (phase response, HP undershoot
+after the QRS, the notch's ~4% passband gain), so a CNN trained on zero-phase
+beats learns a morphology the device never produces.
 
 The pipeline is therefore: raw MIT-BIH (360 Hz) → the AD8232 board's
 analogue response (below) → resample_poly to 250 Hz (stands in for the ADC)

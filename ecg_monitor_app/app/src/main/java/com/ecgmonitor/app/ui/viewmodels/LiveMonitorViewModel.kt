@@ -177,9 +177,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
 
         // ── ECG stream: primary data path ─────────────────────────────────────────
         // Collected on Dispatchers.Default so all packet processing — list management,
-        // beat detection, recording buffer — runs off the main thread.
-        // Previously this ran on Dispatchers.Main (viewModelScope default), which meant
-        // every packet directly competed with UI rendering for the main thread.
+        // beat detection, recording buffer — runs off the main thread and never
+        // competes with UI rendering.
         viewModelScope.launch(Dispatchers.Default) {
             bleManager.ecgPacketFlow.collect { packet ->
                 processIncomingPacket(packet)
@@ -198,10 +197,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
                     val quality = qualityAnalyzer.analyze(beatWindow)
                     val result  = classifier.classify(beatWindow)
 
-                    // Heart rate keys off the firmware's R-peak, which
-                    // is Pan-Tompkins with T-wave rejection. The app used to run its
-                    // own threshold detector for the HR display; on a signal with
-                    // T/R ~0.6 it counted T waves and read ~96% high.
+                    // Heart rate keys off the firmware's R-peak (Pan-Tompkins with
+                    // T-wave rejection); a simple app-side threshold counts tall T waves.
                     recordBeat(beatWindow.timestampMs)
 
                     _lastClassificationResult.value = result
@@ -323,9 +320,8 @@ class LiveMonitorViewModel(application: Application) : AndroidViewModel(applicat
         newReadings.lastOrNull()?.let { latestStreamTimestampMs = it.timestamp }
 
         // ── Visible window: use a pre-allocated ArrayDeque, never copy the full list ──
-        // Previously: _ecgReadings.value.toMutableList() on every packet — a 3 000-element
-        // copy 25×/s, creating constant GC pressure. Now we mutate the same deque in-place
-        // and only snapshot it for the StateFlow emit.
+        // Mutated in place and only snapshotted for the StateFlow emit, avoiding a
+        // 3 000-element copy 25×/s.
         for (reading in newReadings) {
             if (readingDeque.size >= VISIBLE_WINDOW_SAMPLES) readingDeque.removeFirst()
             readingDeque.addLast(reading)

@@ -51,8 +51,6 @@ ml_pipeline/models/logs/*
 *.pth
 *.pt
 
-# Keep converted models for ESP32
-!ml_pipeline/models/converted/
 
 # PlatformIO
 arrhythmia_system_controller/.pio/

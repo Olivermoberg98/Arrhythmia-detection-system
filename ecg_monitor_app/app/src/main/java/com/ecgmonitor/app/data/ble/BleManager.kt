@@ -39,13 +39,10 @@ class BleManager(private val context: Context) {
     /**
      * Hot stream of fully-parsed ECG packets.
      *
-     * Previously a [MutableStateFlow], which caused silent, total packet loss:
-     * StateFlow conflates — when the downstream collector is still processing
-     * packet N, packet N+1 silently overwrites it in the single slot. At 25
-     * packets/s (one per 40 ms) this dropped the majority of the stream whenever
-     * the ViewModel took more than one frame to process a packet.
+     * A [MutableSharedFlow], not a StateFlow: StateFlow conflates, so a collector
+     * still processing packet N would silently lose N+1 at 25 packets/s.
      *
-     * Now a [MutableSharedFlow] with:
+     * Configured with:
      *   - extraBufferCapacity = 64  →  64 × 40 ms = 2.56 s of headroom
      *   - DROP_OLDEST on overflow   →  if the ViewModel truly falls behind,
      *     stale data is discarded rather than blocking the BLE IO thread
