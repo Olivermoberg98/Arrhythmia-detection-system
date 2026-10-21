@@ -179,7 +179,7 @@ def main():
     parser.add_argument("--meta",  required=True,
                         help="Path to metadata.pkl")
     parser.add_argument("--ecg",   required=True,
-                        help="Calibration ECG array .npy  [N, 250]")
+                        help="Calibration ECG array .npy  [N, 128]")
     parser.add_argument("--rr",    required=True,
                         help="Calibration RR array  .npy  [N, 3]")
     parser.add_argument("--out",   default="src/ml/arrhythmia_model.tflite",

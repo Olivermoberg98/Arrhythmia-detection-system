@@ -1,5 +1,5 @@
 """
-Script 04: Train Arrhythmia Detection Model
+train_model.py: Train Arrhythmia Detection Model
 
 Architecture and training strategy based on:
 
@@ -629,10 +629,9 @@ def main(arch_choice=None):
     # Callbacks
     # NOTE: EarlyStopping MUST use mode='min' for val_loss monitoring.
     #       mode='max' treats rising loss as improvement.  Do not change this.
-    # NOTE: ModelCheckpoint and EarlyStopping MUST monitor the SAME metric —
-    #       they used to disagree (val_accuracy vs val_loss), so the saved
-    #       .keras file was silently a different epoch than the one this
-    #       script evaluated and reported on.
+    # NOTE: ModelCheckpoint and EarlyStopping MUST monitor the SAME metric,
+    #       or the saved .keras file is a different epoch than the one this
+    #       script evaluates and reports on.
     # ------------------------------------------------------------------
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_path = os.path.join(MODEL_DIR, f'model_{arch_name}_{timestamp}.keras')

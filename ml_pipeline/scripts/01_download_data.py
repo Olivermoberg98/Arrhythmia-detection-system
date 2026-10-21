@@ -1,5 +1,5 @@
 """
-Script 01: Download MIT-BIH Arrhythmia Database
+01_download_data.py: Download MIT-BIH Arrhythmia Database
 
 This script downloads the MIT-BIH Arrhythmia Database from PhysioNet.
 The database contains 48 half-hour excerpts of two-channel ambulatory ECG recordings

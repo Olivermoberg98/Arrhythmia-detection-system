@@ -123,7 +123,6 @@
     <ID>NewLineAtEndOfFile:EcgMonitorApp.kt$com.ecgmonitor.app.EcgMonitorApp.kt</ID>
     <ID>NewLineAtEndOfFile:EcgRepository.kt$com.ecgmonitor.app.data.repository.EcgRepository.kt</ID>
     <ID>NewLineAtEndOfFile:Entities.kt$com.ecgmonitor.app.data.database.entities.Entities.kt</ID>
-    <ID>NewLineAtEndOfFile:ExampleUnitTest.kt$com.ecgmonitor.app.ExampleUnitTest.kt</ID>
     <ID>NewLineAtEndOfFile:ExportManager.kt$com.ecgmonitor.app.utils.ExportManager.kt</ID>
     <ID>NewLineAtEndOfFile:FirebaseRepository.kt$com.ecgmonitor.app.data.firebase.FirebaseRepository.kt</ID>
     <ID>NewLineAtEndOfFile:HistoryScreen.kt$com.ecgmonitor.app.ui.screens.HistoryScreen.kt</ID>
@@ -153,6 +152,5 @@
     <ID>TooManyFunctions:EcgRepository.kt$EcgRepository</ID>
     <ID>TooManyFunctions:SessionDetailScreen.kt$com.ecgmonitor.app.ui.screens.SessionDetailScreen.kt</ID>
     <ID>TooManyFunctions:SessionDetailViewModel.kt$SessionDetailViewModel : AndroidViewModel</ID>
-    <ID>WildcardImport:ExampleUnitTest.kt$import org.junit.Assert.*</ID>
   </CurrentIssues>
 </SmellBaseline>
