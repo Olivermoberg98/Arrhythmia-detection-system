@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `arrhythmia_system_controller/` | ESP32-S3 firmware: ADC sampling, filtering, R-peak detection, BLE server | PlatformIO / Arduino / C++ |
 | `ecg_monitor_app/` | Android companion app: BLE client, TFLite inference, Room storage, Firebase sync | Kotlin / Compose / Gradle |
 | `ml_pipeline/` | Model training: MIT-BIH download, preprocessing, training, TFLite conversion | Python 3.10 / TF 2.15 |
-| `docs/regulatory/` | IEC 62304 / GDPR / MDR-style documentation set | Markdown + CSV |
+| `docs/regulatory/` | IEC 62304 / ISO 14971 / GDPR / AI Act-style documentation set; `README.md` there is the index and the MDR scope statement | Markdown + CSV |
 
 **`ecg_monitor_app/` has its own CLAUDE.md** with app-level architecture, conventions and build commands. Read it before touching Android code; don't duplicate its content here.
 
@@ -124,7 +124,7 @@ Then copy `src/ml/arrhythmia_model.tflite` + `model_metadata.json` into `ecg_mon
 
 ## Don't touch without asking
 
-- **`docs/regulatory/`** — `SAD-001` architecture, `SRS-001` requirements, `RMF-001` risk file, `DPIA-001`, `SDP-001`, `SVVP-001`, `TM-001` traceability matrix. Ask before editing. If you change consent, data retention, the BLE protocol, classifier behavior, or the signal chain, **flag that these may need a matching update** rather than editing them silently.
+- **`docs/regulatory/`** — `SAD-001` architecture, `SRS-001` requirements, `RMF-001` risk file, `DPIA-001`, `SDP-001`, `SVVP-001`, `TM-001` traceability matrix, `MLD-001` ML development (data, performance, model change control — update its §5 and §11 after any retraining). Ask before editing. If you change consent, data retention, the BLE protocol, classifier behavior, or the signal chain, **flag that these may need a matching update** rather than editing them silently.
 - **`ml_pipeline/models/trained/*`** — training run outputs keyed by timestamp (`model_residual_<ts>.keras`, `results_*.pkl`, confusion/history PNGs). Gitignored; don't delete or regenerate casually — `results_*.pkl` holds each run's thresholds, which `extract_constants.py` writes into `model_metadata.json`.
 - **`ecg_monitor_app/app/google-services.json`** — gitignored, per-environment. Never commit.
 - **Generated model artifacts** (`ml_pipeline/src/ml/arrhythmia_model.tflite`, `model_metadata.json`, and their copies in the app's `assets/`) — regenerate via the pipeline, never hand-edit.

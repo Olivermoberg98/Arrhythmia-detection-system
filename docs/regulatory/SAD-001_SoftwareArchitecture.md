@@ -3,8 +3,8 @@
 ### IEC 62304:2015 §5.3
 
 **Document ID:** SAD-001  
-**Version:** 1.1  
-**Date:** 2026-10-16  
+**Version:** 1.2  
+**Date:** 2026-10-21  
 **Status:** DRAFT  
 
 > **Regulatory status:** Educational project. This document follows the structure of IEC 62304 as a design discipline. The system is **not a certified medical device**, has not been assessed by a Notified Body, and must not be used for clinical purposes.
@@ -160,7 +160,7 @@ Room database (`EcgDatabase`) with 5 entities:
 | `consent_records` | Consent history — never deleted | GDPR compliance |
 | `audit_log` | Data access events | ISO 14971 traceability |
 
-Database version: **5**, with explicit `MIGRATION_1_2` .. `MIGRATION_4_5`. Schemas are exported to `app/schemas` (v3 onwards) for migration tests. Destructive migration is prohibited in release builds.
+Database version: **6**, with explicit `MIGRATION_1_2` .. `MIGRATION_5_6` (v6 adds `ecg_sessions.isComplete`). Schemas are exported to `app/schemas` (v3 onwards) for migration tests. Destructive migration is prohibited in release builds.
 
 ### 4.6 BLE Layer — `data/ble/`
 
@@ -207,17 +207,19 @@ The consent gate in `NavigationHost` is the single enforcement point for FR-CON-
 1. User taps "Start Recording" (LiveMonitorScreen); allowed only while connected
 2. LiveMonitorViewModel.startRecording() creates the session in memory
 3. BleManager streams packets via ecgPacketFlow and beats via beatWindowFlow
-4. ViewModel buffers samples and abnormal events in memory; each beat is quality-scored,
-   classified, and recorded in the ClassificationMonitor
-5. User taps "Stop Recording", or the BLE connection drops (recording stops automatically)
-6. ViewModel calculates heart-rate statistics and takes the monitoring snapshot
-7. EcgRepository saves the session, all readings and events in one write
+4. Each beat is quality-scored, classified, and recorded in the ClassificationMonitor
+5. Every 5 s, EcgRepository.saveRecordingChunk() writes the new readings and events and
+   refreshes the session row with isComplete = false, through one serial writer
+6. User taps "Stop Recording", or the BLE connection drops (recording stops automatically)
+7. Under 10 s: the session is deleted and the user told it was not saved.
+   Otherwise the final chunk is written with isComplete = true on Stop,
+   or isComplete = false if the stop was caused by BLE loss
 8. SyncManager uploads the session metadata and events in the background
 9. ConsentManager.log(SESSION_RECORDED); on upload, SESSION_UPLOADED_CLOUD
 10. Navigate to SessionDetailScreen
 ```
 
-Nothing is written to the database before step 7, so a crash during recording loses the recording (RMF-001 RISK-006, OA-3).
+A crash loses at most the last 5 s; the session row keeps `isComplete = false`, and History and Session Detail mark it incomplete (RMF-001 RISK-006, OA-3).
 
 ---
 
@@ -242,7 +244,10 @@ Delete All / Withdraw consent:
    b. FirebaseRepository.deleteAllCloudData() deletes the user's Firestore documents
 4. Withdrawal additionally records consent granted=false (CONSENT_WITHDRAWN)
 
-Single session delete (History): local copy only; the cloud copy remains (OA-2).
+Single session delete (History):
+1. SyncManager.deleteSessionEverywhere(sessionId) deletes the local session, readings
+   and events, and the Firestore session and event documents (queued by the SDK if offline)
+2. audit_log row written: SESSION_DELETED (OA-2)
 ```
 
 ---
@@ -256,7 +261,7 @@ Single session delete (History): local copy only; the cloud copy remains (OA-2).
 | Cloud access control | Anonymous auth; per-user document path | Review Firestore security rules (not evidenced) |
 | Access control | Android OS sandboxing | Biometric authentication |
 | Consent audit trail | `consent_records` table (never deleted) | Immutable append-only log |
-| Backup | `android:allowBackup="false"`, `android:fullBackupContent="false"` | Exclude device-to-device transfer in `data_extraction_rules.xml` (OA-5) |
+| Backup | `android:allowBackup="false"`, `android:fullBackupContent="false"`; `data_extraction_rules.xml` excludes all domains from cloud backup and device-to-device transfer (OA-5) | Verify on a device (SVVP-001 TC-PRIV-01) |
 
 ---
 
@@ -266,3 +271,4 @@ Single session delete (History): local copy only; the cloud copy remains (OA-2).
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft |
 | 1.1 | 2026-10-16 | Oliver Moberg | Educational status stated; removed device-class claims. System overview updated (ESP32-S3 + AD8232, 250 Hz, two BLE characteristics, on-phone inference, Firestore). Added §2 firmware architecture and signal chain, ML layer (§4.3), SyncManager, cloud layer (§4.7). Database v5. BLE flows, navigation and recording/deletion data flows corrected to the implementation. Security table updated for cloud sync and backup |
+| 1.2 | 2026-10-21 | Oliver Moberg | Database v6 (`isComplete`). Recording data flow updated for chunked writes, incomplete flag and minimum length (OA-3). Single-session delete now removes the cloud copy (OA-2). Backup row updated for device-transfer exclusion (OA-5) |

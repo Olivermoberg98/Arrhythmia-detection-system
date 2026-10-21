@@ -3,8 +3,8 @@
 ### GDPR Article 35 / MDR Annex I Section 17
 
 **Document ID:** DPIA-001  
-**Version:** 1.1  
-**Date:** 2026-10-16  
+**Version:** 1.2  
+**Date:** 2026-10-21  
 **Status:** DRAFT — Requires review by Data Protection Officer; cloud sync is already deployed (see §7)  
 
 > **Regulatory status:** Educational project; not a certified medical device. GDPR applies regardless: the app processes health data.
@@ -81,7 +81,7 @@ Upload starts automatically after each saved recording and retries pending sessi
 | **Storage limitation** | ✅ User can delete all data at any time; no automatic retention period enforced by app |
 | **Accuracy** | ✅ Data is recorded as-is from sensor; no modification after storage |
 | **Integrity and confidentiality** | ⚠️ Local data relies on the Android sandbox (SQLCipher not implemented); cloud data relies on Firestore security rules that have not been reviewed |
-| **Transparency** | ❌ The consent text states data "is not transmitted to any server, cloud service, or third party", which is no longer true (Risk 6) |
+| **Transparency** | ⚠️ The consent text (`CONSENT_VERSION` 3.0) lists what is uploaded to Firestore and that raw waveforms stay on the device; existing users are re-prompted. Not yet verified on a device (TC-CON-08) |
 
 ---
 
@@ -103,9 +103,9 @@ Upload starts automatically after each saved recording and retries pending sessi
 | Threat | Android Auto Backup uploads the database to Google Drive, or device-to-device transfer copies it to another phone, without user awareness |
 | Likelihood | Low for cloud backup; Medium for device-to-device transfer |
 | Impact | High |
-| Current mitigation | `android:allowBackup="false"` and `android:fullBackupContent="false"` set in AndroidManifest.xml. `data_extraction_rules.xml` is the unmodified template; with targetSdk 34 this probably leaves device-to-device transfer enabled (to be confirmed) |
-| Residual risk | Medium |
-| **Required mitigation** | Exclude the database from device-to-device transfer in `data_extraction_rules.xml` (RMF-001 OA-5) |
+| Current mitigation | `android:allowBackup="false"` and `android:fullBackupContent="false"` set in AndroidManifest.xml; `data_extraction_rules.xml` excludes every domain from both cloud backup and device-to-device transfer (RMF-001 OA-5, 2026-10-18) |
+| Residual risk | Low once verified; Medium until TC-PRIV-01 has been run |
+| **Remaining** | Run TC-PRIV-01 (backup and device transfer on a real device) |
 
 ### Risk 3 — Consent Record Insufficient
 | Field | Detail |
@@ -141,9 +141,9 @@ Upload starts automatically after each saved recording and retries pending sessi
 | Threat | Users consent to a text that says nothing is transmitted, while session metadata and events upload to Firestore. Consent given on that basis is not informed (Art. 7, Art. 13) |
 | Likelihood | High (affects every user) |
 | Impact | High (invalid legal basis for the cloud processing) |
-| Current mitigation | None |
-| Residual risk | High |
-| **Required mitigation** | Update the consent text to describe the cloud sync, increment `CONSENT_VERSION` so existing users are re-prompted (RMF-001 OA-1, SRS-001 FR-CON-08) |
+| Current mitigation | Consent text updated to describe the cloud sync field by field; `CONSENT_VERSION` raised to 3.0 so existing users are re-prompted (RMF-001 OA-1, SRS-001 FR-CON-08, 2026-10-18) |
+| Residual risk | Low once verified; consent given before version 3.0 is not relied on |
+| **Remaining** | Run TC-CON-08; legal review of the text (SRS-001 NFR-07) |
 
 ### Risk 7 — Identifiers in Free-Text Session Names
 | Field | Detail |
@@ -151,9 +151,9 @@ Upload starts automatically after each saved recording and retries pending sessi
 | Threat | A user types a name or other identifier into a session name, which is uploaded with the health data |
 | Likelihood | Medium |
 | Impact | Medium (links the pseudonymous cloud record to a person) |
-| Current mitigation | None |
-| Residual risk | Medium |
-| Additional mitigation needed | Stop uploading the session name, or warn the user that it is uploaded |
+| Current mitigation | The consent text states that the session name is uploaded |
+| Residual risk | Medium — disclosed once at consent, but nothing warns the user when typing a name |
+| Additional mitigation needed | Stop uploading the session name, or warn at the point of entry |
 
 ---
 
@@ -161,9 +161,9 @@ Upload starts automatically after each saved recording and retries pending sessi
 
 | Right | GDPR Article | Implementation Status |
 |-------|-------------|----------------------|
-| Right to be informed | Art. 13/14 | ❌ ConsentScreen explains local processing but states that nothing is transmitted (Risk 6) |
+| Right to be informed | Art. 13/14 | ⚠️ ConsentScreen describes local storage and the Firestore upload (Risk 6 mitigated); not yet verified (TC-CON-08) or legally reviewed |
 | Right of access | Art. 15 | ⚠️ User can view data in app; no formal export of consent records or of the cloud copy |
-| Right to erasure | Art. 17 | ⚠️ "Delete All" deletes local and cloud data. Deleting a single session leaves its cloud copy (RMF-001 OA-2) |
+| Right to erasure | Art. 17 | ✅ "Delete All", withdrawal and single-session delete remove both the local and the cloud copy (RMF-001 OA-2); single-session cloud delete not yet verified (TC-SYNC-05). Uninstalling removes the local copy only, as the consent text states |
 | Right to withdraw consent | Art. 7(3) | ✅ "Withdraw Consent" in Settings; deletes local and cloud data |
 | Right to data portability | Art. 20 | ✅ CSV and PDF export in SessionDetail |
 | Right to restrict processing | Art. 18 | ⚠️ Not explicitly implemented; cloud sync cannot be paused separately from consent |
@@ -173,7 +173,7 @@ Upload starts automatically after each saved recording and retries pending sessi
 
 ## 7. Consultation
 
-Version 1.0 listed these as prerequisites for cloud implementation. Cloud sync was implemented before they were completed. Status as of 2026-10-16:
+Version 1.0 listed these as prerequisites for cloud implementation. Cloud sync was implemented before they were completed. Status as of 2026-10-21:
 
 | # | Prerequisite | Status |
 |---|--------------|--------|
@@ -181,7 +181,7 @@ Version 1.0 listed these as prerequisites for cloud implementation. Cloud sync w
 | 2 | **Data Processing Agreement** signed with Google (Firebase) | ⏳ Not evidenced |
 | 3 | **Firebase Security Rules** reviewed — ensure users can only read/write their own data | ⏳ Not evidenced (rules are not in the repository) |
 | 4 | **EU data residency** confirmed — Firebase region set to `europe-west` before first write | ⏳ Not confirmed |
-| 5 | **Updated consent text** — the ConsentScreen still states "data is not transmitted"; must be updated and `CONSENT_VERSION` incremented | ❌ Not done (Risk 6) |
+| 5 | **Updated consent text** describing the cloud sync, with `CONSENT_VERSION` incremented | ✅ Done 2026-10-18 (`CONSENT_VERSION` 3.0); TC-CON-08 not run |
 
 ---
 
@@ -190,11 +190,11 @@ Version 1.0 listed these as prerequisites for cloud implementation. Cloud sync w
 | Action | Priority | Owner | Status |
 |--------|----------|-------|--------|
 | Add `android:allowBackup="false"` to AndroidManifest.xml | **Critical** | Developer | ✅ Done |
-| Update consent text for cloud sync and increment `CONSENT_VERSION` | **Critical** | Developer | ⏳ Open (OA-1) |
+| Update consent text for cloud sync and increment `CONSENT_VERSION` | **Critical** | Developer | ✅ Done (OA-1); verify with TC-CON-08 |
 | Complete §7 items 2–4 (DPA, security rules, region) | **Critical** | Developer | ⏳ Open |
-| Delete the cloud copy when a single session is deleted | High | Developer | ⏳ Open (OA-2) |
-| Exclude the database from device-to-device transfer | High | Developer | ⏳ Open (OA-5) |
-| Stop uploading, or disclose, the free-text session name | Medium | Developer | ⏳ Open |
+| Delete the cloud copy when a single session is deleted | High | Developer | ✅ Done (OA-2); verify with TC-SYNC-05 |
+| Exclude the database from device-to-device transfer | High | Developer | ✅ Done (OA-5); verify with TC-PRIV-01 |
+| Stop uploading, or disclose, the free-text session name | Medium | Developer | ✅ Disclosed in the consent text; a warning at entry is still open |
 | Implement SQLCipher database encryption | High | Developer | ⏳ Open |
 | Add biometric app lock | Medium | Developer | ⏳ Open |
 
@@ -206,5 +206,6 @@ Version 1.0 listed these as prerequisites for cloud implementation. Cloud sync w
 |---------|------|--------|---------|
 | 1.0 | 2026-01-01 | [Author] | Initial draft — local-only version |
 | 1.1 | 2026-10-16 | Oliver Moberg | Updated for the implemented Firebase cloud sync: Google added as processor; data inventory with storage location; cloud data flow; Risk 2 updated (backup disabled, device transfer open); Risk 4 now current; added Risk 6 (consent text does not disclose sync) and Risk 7 (free-text session name uploaded); rights table and §7/§8 converted to status lists |
+| 1.2 | 2026-10-21 | Oliver Moberg | Updated for the RMF-001 OA-1/2/5 fixes: transparency, Risk 2, Risk 6, Risk 7, right to be informed and right to erasure; §7 item 5 and three §8 actions done (on-device verification pending). §7 items 1–4 unchanged |
 
-*Must be reviewed and re-approved once the §7 items and Risk 6 are resolved.*
+*Must be reviewed and re-approved once the §7 items are resolved and the OA-1/2/5 fixes are verified.*

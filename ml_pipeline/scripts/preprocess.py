@@ -56,7 +56,9 @@ reasons, each of which is a general principle worth carrying forward:
   Reason 3 — Clinical management equivalence:
     Clinically, Fusion beats are managed identically to PVCs (Ventricular
     ectopic beats) — they indicate the same underlying ventricular ectopy.
-    Merging F → V therefore loses no actionable information for the use case.
+    Dropping F therefore loses little actionable information: the same ectopy
+    shows up in the patient's V beats. (F is dropped, not merged into V —
+    AAMI_CLASSES maps 'F' to -1.)
 
   Reason 4 — Alignment with published benchmarks:
     de Chazal et al. (2004), Kiranyaz et al. (2016), Yıldırım et al. (2018),
